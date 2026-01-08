@@ -16,7 +16,11 @@ This project includes a backend agent server and a Gradio-based frontend.
 Before running the agent, ensure your Google Cloud environment is ready.
 
 ### 1. Enable Required APIs
-Run the following command in your Cloud Shell or ensure these APIs are enabled in the Console:
+
+
+**Automated:** The `setup_gcp.sh` script will handle this for you.
+
+**Manual:** Run the following command:
 ```bash
 gcloud services enable bigquery.googleapis.com \
                        aiplatform.googleapis.com \
@@ -47,14 +51,8 @@ bq mk --dataset --location=US adk_logs
 ## Authentication
 
 **OAuth 2.0 Integration**: This agent uses OAuth 2.0 to authenticate the actual user.
-The **Frontend UI** requires the following environment variables to handle the OAuth flow:
 
-```bash
-export OAUTH_CLIENT_ID="your-client-id"
-export OAUTH_CLIENT_SECRET="your-client-secret"
-export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
-export OPENID_PROVIDER_URL="https://accounts.google.com"
-```
+The **Frontend UI** requires environment variables to handle the OAuth flow. You can set these via the setup script or manually (see *Configuration* below).
 
 ## Installation
 
@@ -71,17 +69,40 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configuration
-Create a `.env` file in the root directory (or set env vars) with the following details:
 
-```ini
+
+#### Option A: Manual Configuration
+If you prefer to configure everything manually, you can set the environment variables directly in your shell or create a `.env` file.
+
+**1. Enable APIs Manually:**
+```bash
+gcloud services enable bigquery.googleapis.com \
+                       aiplatform.googleapis.com \
+                       recommender.googleapis.com \
+                       cloudresourcemanager.googleapis.com
+```
+
+**2. Set Credentials:**
+You can either export these variables in your shell OR save them in a `.env` file (the app supports both).
+
+```bash
 # Backend Configuration
-TARGET_PROJECT_ID=your-project-id
-TARGET_REGION=us-central1
-QUOTA_PROJECT_ID=your-project-id  # Required to fix "UserWarning: quota_project_id"
+export TARGET_PROJECT_ID="your-project-id"
+export TARGET_REGION="us-central1"
+export QUOTA_PROJECT_ID="your-project-id"
 
-# Frontend OAuth Configuration
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
+# Frontend OAuth Configuration (Required for UI)
+export OAUTH_CLIENT_ID="your-client-id"
+export OAUTH_CLIENT_SECRET="your-client-secret"
+export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
+export OPENID_PROVIDER_URL="https://accounts.google.com"
+```
+
+#### Option B: Automated Setup
+You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` file:
+
+```bash
+./setup_gcp.sh
 ```
 
 ## Running the Application
@@ -98,11 +119,7 @@ adk api_server . --reload
 
 ```bash
 source venv/bin/activate
-# Ensure OAuth vars are exported if not in .env
-export OAUTH_CLIENT_ID=""
-export OAUTH_CLIENT_SECRET=""
-export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
-export OPENID_PROVIDER_URL="https://accounts.google.com"
+# Ensure you have set your OAuth credentials in the .env file
 python gradio_bqops.py
 ```
 
