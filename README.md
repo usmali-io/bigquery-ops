@@ -34,6 +34,16 @@ Ensure the user running the agent (or the Service Account (not recommended)) has
 ### 3. Verification
 - Ensure you have a valid **Quota Project** set up (usually your main working project) to avoid authentication warnings.
 
+### 4. Logging Dataset (Optional but Recommended)
+The agent logs analytics to a BigQuery dataset (default: `adk_logs`). If the dataset does not exist, the agent will attempt to create the table, but the dataset itself must usually exist.
+
+To manually create the dataset:
+```bash
+# Replace 'adk_logs' if you customized LOGGING_DATASET_ID in .env
+bq mk --dataset --location=US adk_logs
+```
+
+
 ## Authentication
 
 **OAuth 2.0 Integration**: This agent uses OAuth 2.0 to authenticate the actual user.
