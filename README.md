@@ -16,11 +16,17 @@ This project includes a backend agent server and a Gradio-based frontend.
 Before running the agent, ensure your Google Cloud environment is ready.
 
 ### 1. Enable Required APIs
-The `setup_gcp.sh` script (see Configuration section) will automatically enable the required APIs:
-- BigQuery API
-- Vertex AI API
-- Recommender API
-- Cloud Resource Manager API
+
+
+**Automated:** The `setup_gcp.sh` script will handle this for you.
+
+**Manual:** Run the following command:
+```bash
+gcloud services enable bigquery.googleapis.com \
+                       aiplatform.googleapis.com \
+                       recommender.googleapis.com \
+                       cloudresourcemanager.googleapis.com
+```
 
 ### 2. IAM Roles
 Ensure the user running the agent (or the Service Account (not recommended)) has the following roles:
@@ -46,7 +52,7 @@ bq mk --dataset --location=US adk_logs
 
 **OAuth 2.0 Integration**: This agent uses OAuth 2.0 to authenticate the actual user.
 
-The setup script (`setup_gcp.sh`) will assist you in generating the necessary credentials and saving them to `.env`.
+The **Frontend UI** requires environment variables to handle the OAuth flow. You can set these via the setup script or manually (see *Configuration* below).
 
 ## Installation
 
@@ -63,26 +69,40 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configuration
-Run the automated setup assistant to configure your GCP project and environment:
+
+
+#### Option A: Manual Configuration
+If you prefer to configure everything manually, you can set the environment variables directly in your shell or create a `.env` file.
+
+**1. Enable APIs Manually:**
+```bash
+gcloud services enable bigquery.googleapis.com \
+                       aiplatform.googleapis.com \
+                       recommender.googleapis.com \
+                       cloudresourcemanager.googleapis.com
+```
+
+**2. Set Credentials:**
+You can either export these variables in your shell OR save them in a `.env` file (the app supports both).
+
+```bash
+# Backend Configuration
+export TARGET_PROJECT_ID="your-project-id"
+export TARGET_REGION="us-central1"
+export QUOTA_PROJECT_ID="your-project-id"
+
+# Frontend OAuth Configuration (Required for UI)
+export OAUTH_CLIENT_ID="your-client-id"
+export OAUTH_CLIENT_SECRET="your-client-secret"
+export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
+export OPENID_PROVIDER_URL="https://accounts.google.com"
+```
+
+#### Option B: Automated Setup
+You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` file:
 
 ```bash
 ./setup_gcp.sh
-```
-
-This script will:
-1. Detect and configure your Google Cloud Project.
-2. Enable all required APIs (BigQuery, Vertex AI, Recommender).
-3. Guide you through creating OAuth credentials and populate the `.env` file.
-
-```ini
-# Backend Configuration
-TARGET_PROJECT_ID=your-project-id
-TARGET_REGION=us-central1
-QUOTA_PROJECT_ID=your-project-id  # Required to fix "UserWarning: quota_project_id"
-
-# Frontend OAuth Configuration
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
 ```
 
 ## Running the Application
