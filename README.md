@@ -47,6 +47,30 @@ To manually create the dataset:
 bq mk --dataset --location=US adk_logs
 ```
 
+### 5. OAuth 2.0 Setup (Required)
+The agent uses OAuth 2.0 to authenticate users. You must create valid credentials in the Google Cloud Console.
+
+1.  **Configure Consent Screen**:
+    -   Go to **APIs & Services > OAuth consent screen**.
+    -   Select **External** (or Internal if you have a Workspace).
+    -   Fill in required fields (App name, User support email, Developer contact information).
+    -   Add the following **Scopes**:
+        -   `openid`
+        -   `https://www.googleapis.com/auth/userinfo.email`
+        -   `https://www.googleapis.com/auth/userinfo.profile`
+        -   `https://www.googleapis.com/auth/cloud-platform`
+        -   `https://www.googleapis.com/auth/bigquery`
+    -   Add your email as a **Test User** (if External).
+
+2.  **Create Credentials**:
+    -   Go to **APIs & Services > Credentials**.
+    -   Click **Create Credentials > OAuth client ID**.
+    -   **Application type**: Web application.
+    -   **Name**: `BigQuery Ops Agent` (or similar).
+    -   **Authorized redirect URIs**: `http://localhost:7860/login/callback`
+    -   Click **Create** & copy **Client ID** and **Client Secret**
+    -   These will be used in the `Configuration` step.
+
 
 ## Authentication
 
