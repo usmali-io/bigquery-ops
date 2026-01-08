@@ -119,7 +119,7 @@ adk api_server . --reload
 
 ```bash
 source venv/bin/activate
-# Ensure you have set your OAuth credentials in the .env file
+# Ensure you have set your OAuth credentials in the .env file or directly in environment variables
 python gradio_bqops.py
 ```
 
