@@ -16,6 +16,10 @@ import base64
 import io
 import fastapi
 from PIL import Image as PILImage
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # MONKEYPATCH: Debug Redirect URI
 original_generate_redirect_uri = oauth._generate_redirect_uri

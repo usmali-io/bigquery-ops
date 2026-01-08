@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.adk
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
+adk_logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*/.adk/*
