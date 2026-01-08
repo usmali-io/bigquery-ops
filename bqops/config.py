@@ -7,9 +7,16 @@ load_dotenv()
 
 # --- Logging Configuration ---
 # Where the agent logs its own activities and analytics
+# Where the agent logs its own activities and analytics
+# Set to '1' or 'true' to enable logging
+ENABLE_ADK_LOGGING = os.getenv("ENABLE_ADK_LOGGING", "0").lower() in ("1", "true") #1 - ADK logging on, 0 - ADK logging off (default), see https://codelabs.developers.google.com/adk-bigquery-agent-analytics-plugin#6
+
 LOGGING_PROJECT_ID = os.getenv("LOGGING_PROJECT_ID", "")
 LOGGING_DATASET_ID = os.getenv("LOGGING_DATASET_ID", "adk_logs") #change or leave default
 LOGGING_TABLE_ID = os.getenv("LOGGING_TABLE_ID", "agent_events") #change or leave default
+
+if ENABLE_ADK_LOGGING and not LOGGING_PROJECT_ID:
+    LOGGING_PROJECT_ID = TARGET_PROJECT_ID
 
 # --- Target Environment ---
 # The project and region the agent queries against for answers

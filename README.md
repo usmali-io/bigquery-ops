@@ -47,6 +47,8 @@ To manually create the dataset:
 bq mk --dataset --location=US adk_logs
 ```
 
+**Note:** Self-analytics logging is **disabled by default**. To enable it, you must set `ENABLE_ADK_LOGGING="1"` in your configuration. When enabled, it allows the agent to log its own usage patterns (tokens, tools used) to the specified BigQuery table.
+
 
 ## Authentication
 
@@ -96,6 +98,9 @@ export OAUTH_CLIENT_ID="your-client-id"
 export OAUTH_CLIENT_SECRET="your-client-secret"
 export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
 export OPENID_PROVIDER_URL="https://accounts.google.com"
+
+# Optional: Enable ADK Analytics Logging (0=Disabled, 1=Enabled)
+export ENABLE_ADK_LOGGING="0"
 ```
 
 #### Option B: Automated Setup
