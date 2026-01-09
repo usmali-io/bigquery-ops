@@ -505,13 +505,11 @@ def check_auth_status(request: gr.Request):
     if not username and user_info:
         username = user_info.get("email") or user_info.get("preferred_username")
 
-    project_id = os.environ.get("TARGET_PROJECT_ID", "Unknown")
     if username:
         # User is logged in
         user_label = f"Logout ({username})"
-        project_text = f"<div style='text-align: center; font-size: 0.8em; color: gray;'>Project: <b>{project_id}</b></div>"
-        return gr.update(visible=False), gr.update(value=user_label, visible=True), gr.update(value=project_text, visible=True)
-    return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(visible=False), gr.update(value=user_label, visible=True)
+    return gr.update(visible=True), gr.update(visible=False)
 
 # --- Launch ---
 if __name__ == "__main__":
@@ -527,7 +525,6 @@ if __name__ == "__main__":
                  login_btn = gr.Button("Sign in with Google", link="/login/google", size="sm", visible=False)
                  logout_btn = gr.Button("Logout", link="/logout", size="sm", visible=False, variant="secondary")
                  toggle_btn = gr.Button("Maximize Chart", size="sm", visible=False) # Moved here
-                 project_display = gr.Markdown(visible=False)
                  # Hidden LoginButton to ensure Gradio enables OAuth hooks if needed
                  gr.LoginButton(visible=False)
             
@@ -638,6 +635,5 @@ if __name__ == "__main__":
         )
 
         # Check auth status on load to toggle Login/Logout buttons
-        demo.load(check_auth_status, None, [login_btn, logout_btn, project_display])
-
+        demo.load(check_auth_status, None, [login_btn, logout_btn])
     demo.queue().launch(server_name="localhost", server_port=7860)
