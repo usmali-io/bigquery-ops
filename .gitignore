@@ -13,6 +13,8 @@ env/
 .env
 .env.local
 .env.*.local
+bqops/config.py
+bqops/.env
 
 # IDEs
 .vscode/
