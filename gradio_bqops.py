@@ -636,4 +636,4 @@ if __name__ == "__main__":
 
         # Check auth status on load to toggle Login/Logout buttons
         demo.load(check_auth_status, None, [login_btn, logout_btn])
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860)
+    demo.queue().launch(server_name="localhost", server_port=7860)

@@ -46,6 +46,7 @@ To manually create the dataset:
 # Replace 'adk_logs' if you customized LOGGING_DATASET_ID in .env
 bq mk --dataset --location=US adk_logs
 ```
+To enable logging, set `ENABLE_ADK_LOGGING="1"` in your configuration `config.py` file. By default ADK logging is disabled.
 
 ### 5. OAuth 2.0 Setup (Required)
 The agent uses OAuth 2.0 to authenticate users. You must create valid credentials in the Google Cloud Console.
