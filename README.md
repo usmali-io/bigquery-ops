@@ -43,7 +43,7 @@ The agent logs analytics to a BigQuery dataset (default: `adk_logs`). If the dat
 
 To manually create the dataset:
 ```bash
-# Replace 'adk_logs' if you customized LOGGING_DATASET_ID in config.py
+# Replace 'adk_logs' if you customized LOGGING_DATASET_ID in .env
 bq mk --dataset --location=US adk_logs
 ```
 To enable logging, set `ENABLE_ADK_LOGGING="1"` in your configuration `config.py` file. By default ADK logging is disabled.
