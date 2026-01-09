@@ -30,3 +30,4 @@ adk_logs/
 .coverage
 htmlcov/
 */.adk/*
+bqops/.env
