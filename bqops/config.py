@@ -18,7 +18,7 @@ TARGET_PROJECT_ID = os.getenv("TARGET_PROJECT_ID", "")
 QUOTA_PROJECT_ID = os.getenv("QUOTA_PROJECT_ID", TARGET_PROJECT_ID)
 os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = QUOTA_PROJECT_ID
 
-TARGET_REGION = os.getenv("TARGET_REGION", "region-us") #eg region-us
+TARGET_REGION = os.getenv("TARGET_REGION", "") #eg region-us
 
 # --- Billing Data Configuration ---
 # Project and Dataset containing the Standard Cloud Billing Export
