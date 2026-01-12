@@ -19,7 +19,7 @@ from PIL import Image as PILImage
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # MONKEYPATCH: Debug Redirect URI
 original_generate_redirect_uri = oauth._generate_redirect_uri
@@ -517,7 +517,7 @@ if __name__ == "__main__":
 
     with gr.Blocks(theme=gr.themes.Default(), title="BigQuery Ops Agent") as demo:
         with gr.Row(elem_id="header_row"):
-            gr.Image("logo_bqops.png", show_label=False, container=False, width=225, height=112,
+            gr.Image(os.path.join(os.path.dirname(__file__), "logo_bqops.png"), show_label=False, container=False, width=225, height=112,
                 show_download_button=False, interactive=False, show_fullscreen_button=False, elem_id="logo_image_left")
             with gr.Column(scale=5):
                  gr.Markdown("# BigQuery Ops Agent", elem_id="header_title")

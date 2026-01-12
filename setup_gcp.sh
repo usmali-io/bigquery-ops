@@ -3,7 +3,7 @@
 # setup_gcp.sh
 # Automates GCP configuration and guides OAuth setup for BigQuery Ops Agent
 
-ENV_FILE_FRONTEND=".env"
+ENV_FILE_FRONTEND="ui/.env"
 ENV_FILE_BACKEND="agent/.env"
 BOLD=$(tput bold)
 NORMAL=$(tput sgr0)
@@ -123,4 +123,4 @@ echo "Frontend config saved to $ENV_FILE_FRONTEND"
 echo "Backend config saved to $ENV_FILE_BACKEND"
 echo "You can now run the application with:"
 echo "  ${BOLD}source venv/bin/activate${RESET}"
-echo "  ${BOLD}python gradio_bqops.py${RESET}"
+echo "  ${BOLD}python ui/gradio_bqops.py${RESET}"

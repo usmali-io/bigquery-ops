@@ -113,7 +113,7 @@ You can either export these variables in your shell OR save them in the appropri
 **Backend Configuration (`agent/.env`):**
 Contains GCP Project settings, Model config, and Logging settings.
 
-**Frontend Configuration (`.env`):**
+**Frontend Configuration (`ui/.env`):**
 Contains OAuth credentials and Server URL.
 
 ```bash
@@ -130,7 +130,7 @@ export OPENID_PROVIDER_URL="https://accounts.google.com"
 ```
 
 #### Option B: Automated Setup
-You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` files (both `agent/.env` and `.env`):
+You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` files (both `agent/.env` and `ui/.env`):
 
 ```bash
 ./setup_gcp.sh
@@ -150,8 +150,8 @@ adk api_server . --reload
 
 ```bash
 source venv/bin/activate
-# Ensure you have set your OAuth credentials in the .env file or directly in environment variables
-python gradio_bqops.py
+# Ensure you have set your OAuth credentials in the ui/.env file or directly in environment variables
+python ui/gradio_bqops.py
 ```
 
 - Open `http://localhost:7860`

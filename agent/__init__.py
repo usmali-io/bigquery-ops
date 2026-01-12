@@ -33,7 +33,7 @@ os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = QUOTA_PROJECT_ID
 if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
     os.environ["GOOGLE_CLOUD_PROJECT"] = QUOTA_PROJECT_ID
 
-TARGET_REGION = os.getenv("TARGET_REGION", "region-us")
+TARGET_REGION = os.getenv("TARGET_REGION", "")
 
 # --- Billing Data Configuration ---
 # Project and Dataset containing the Standard Cloud Billing Export
@@ -42,9 +42,9 @@ BILLING_DATASET_ID = os.getenv("BILLING_DATASET_ID", "")
 BILLING_TABLE_ID = os.getenv("BILLING_TABLE_ID", "")
 
 # --- Agent Settings ---
-AGENT_NAME = os.getenv("AGENT_NAME", "BigQuery_Operations_Agent")
+AGENT_NAME = os.getenv("AGENT_NAME", "")
 # Updated to a stable available model version
-AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-2.5-flash")
+AGENT_MODEL = os.getenv("AGENT_MODEL", "")
 
 # --- Image Generation Settings ---
-IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL", "gemini-2.5-flash-image")
+IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL", "")
