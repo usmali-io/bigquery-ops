@@ -197,7 +197,7 @@ oauth._add_mocked_oauth_routes = patched_add_oauth_routes
 
 # --- Configuration ---
 ADK_SERVER_BASE_URL = os.getenv("ADK_SERVER_URL", "http://127.0.0.1:8000")
-APP_NAME = "bqops"
+APP_NAME = "agent"
 
 
 # --- Session State ---

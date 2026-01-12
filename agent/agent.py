@@ -7,10 +7,10 @@ from google.auth.transport.requests import Request
 
 from google.adk.plugins.bigquery_agent_analytics_plugin import BigQueryAgentAnalyticsPlugin
 
-from . import config
 from . import operational_tools
 from . import auth_plugin
 from . import context
+import agent
 from .mcp_fallback_tool import execute_sql_via_mcp
 
 # 1. Get Credentials & Ensure Token is Valid
@@ -20,14 +20,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/bigquery",
     "https://www.googleapis.com/auth/cloud-platform"
 ]
-credentials, _ = google.auth.default(scopes=SCOPES, quota_project_id=config.QUOTA_PROJECT_ID)
+credentials, _ = google.auth.default(scopes=SCOPES, quota_project_id=agent.QUOTA_PROJECT_ID)
 if not credentials.token:
     credentials.refresh(Request())
 
 # --- Agent Definition ---
 bq_ops_agent = Agent(
-    name=config.AGENT_NAME, 
-    model=config.AGENT_MODEL,
+    name=agent.AGENT_NAME, 
+    model=agent.AGENT_MODEL,
     description="An agent that answers operational questions about BigQuery.",
     instruction=(
         "You are an expert BigQuery Operations assistant. Your goal is to help users "
@@ -49,10 +49,10 @@ bq_ops_agent = Agent(
         "    * Security? Use `get_iam_policy_recommendations` to see official security warnings, `check_table_permissions`, or `find_publicly_exposed_datasets`. \n"
         "    * Performance? Use `get_common_query_errors`, `check_slot_capacity_saturation`. \n"
         "    * **GCP Billing & Invoices?** Use `execute_sql_via_mcp` to query the Standard Billing Export table: "
-        f"       `{config.BILLING_PROJECT_ID}.{config.BILLING_DATASET_ID}.{config.BILLING_TABLE_ID}`. "
+        f"       `{agent.BILLING_PROJECT_ID}.{agent.BILLING_DATASET_ID}.{agent.BILLING_TABLE_ID}`. "
         "       Focus on `cost`, `usage_start_time`, `service.description`, `sku.description`. \n"
         "    * Ad-hoc SQL? If NO specific tool matches, you may use `execute_sql_via_mcp` "
-        f"       to query `{config.TARGET_PROJECT_ID}.{config.TARGET_REGION}.INFORMATION_SCHEMA` directly.\n\n"
+        f"       to query `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA` directly.\n\n"
         "2.  **Analyze Tool Output:** When a tool returns data, summarize findings. \n"
         "    * If using `forecast_monthly_costs`, explain that this is a linear projection based on recent activity.\n\n"
         "3.  **Handling Images (CRITICAL):**\n"
@@ -106,16 +106,16 @@ bq_ops_agent = Agent(
 # --- App & Plugin Integration ---
 plugins_list = [auth_plugin.AuthPlugin()]
 
-if config.ENABLE_ADK_LOGGING: ## <- this is disabling/enabling ADK logging based on config.py
+if agent.ENABLE_ADK_LOGGING: ## <- this is disabling/enabling ADK logging based on config.py
     bq_logging_plugin = BigQueryAgentAnalyticsPlugin(
-        project_id=config.LOGGING_PROJECT_ID,
-        dataset_id=config.LOGGING_DATASET_ID,
-        table_id=config.LOGGING_TABLE_ID
+        project_id=agent.LOGGING_PROJECT_ID,
+        dataset_id=agent.LOGGING_DATASET_ID,
+        table_id=agent.LOGGING_TABLE_ID
     )
     plugins_list.append(bq_logging_plugin)
 
 app = App(
-    name="bqops",
+    name="agent",
     root_agent=bq_ops_agent,
     plugins=plugins_list
 )

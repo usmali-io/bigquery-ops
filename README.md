@@ -46,7 +46,7 @@ To manually create the dataset:
 # Replace 'adk_logs' if you customized LOGGING_DATASET_ID in .env
 bq mk --dataset --location=US adk_logs
 ```
-To enable logging, set `ENABLE_ADK_LOGGING="1"` in your configuration `config.py` file. By default ADK logging is disabled.
+To enable logging, set `ENABLE_ADK_LOGGING="1"` in your `agent/.env` file. By default ADK logging is disabled.
 
 ### 5. OAuth 2.0 Setup (Required)
 The agent uses OAuth 2.0 to authenticate users. You must create valid credentials in the Google Cloud Console.
@@ -108,12 +108,18 @@ gcloud services enable bigquery.googleapis.com \
 ```
 
 **2. Set Credentials:**
-You can either export these variables in your shell OR save them in a `.env` file (the app supports both).
+You can either export these variables in your shell OR save them in the appropriate `.env` files.
+
+**Backend Configuration (`agent/.env`):**
+Contains GCP Project settings, Model config, and Logging settings.
+
+**Frontend Configuration (`.env`):**
+Contains OAuth credentials and Server URL.
 
 ```bash
 # Backend Configuration
 export TARGET_PROJECT_ID="your-project-id"
-export TARGET_REGION="us-central1"
+export TARGET_REGION="eg us-central1"
 export QUOTA_PROJECT_ID="your-project-id"
 
 # Frontend OAuth Configuration (Required for UI)
@@ -124,7 +130,7 @@ export OPENID_PROVIDER_URL="https://accounts.google.com"
 ```
 
 #### Option B: Automated Setup
-You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` file:
+You can use the included helper script to automatically enable APIs, configure your project, and interactively set up your `.env` files (both `agent/.env` and `.env`):
 
 ```bash
 ./setup_gcp.sh
@@ -154,6 +160,6 @@ python gradio_bqops.py
 ## Troubleshooting
 
 -   **"UserWarning: Your application has authenticated using end user credentials..."**
-    -   **Fix**: Ensure `QUOTA_PROJECT_ID` is set in your `.env` file or environment. This tells Google libraries which project to bill for API calls.
+    -   **Fix**: Ensure `QUOTA_PROJECT_ID` is set in your `agent/.env` file or environment. This tells Google libraries which project to bill for API calls.
 
 

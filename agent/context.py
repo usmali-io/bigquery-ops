@@ -2,7 +2,7 @@
 import contextvars
 from typing import Optional
 import google.oauth2.credentials
-from . import config
+import agent
 
 _oauth_token_ctx = contextvars.ContextVar("_oauth_token_ctx", default=None)
 
@@ -25,6 +25,6 @@ def get_credentials() -> Optional[google.oauth2.credentials.Credentials]:
         # We MUST provide quota_project_id for user credentials to work with BQ API
         return google.oauth2.credentials.Credentials(
             token,
-            quota_project_id=config.QUOTA_PROJECT_ID
+            quota_project_id=agent.QUOTA_PROJECT_ID
         )
     return None

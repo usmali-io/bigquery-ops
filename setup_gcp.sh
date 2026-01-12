@@ -3,7 +3,8 @@
 # setup_gcp.sh
 # Automates GCP configuration and guides OAuth setup for BigQuery Ops Agent
 
-ENV_FILE=".env"
+ENV_FILE_FRONTEND=".env"
+ENV_FILE_BACKEND="agent/.env"
 BOLD=$(tput bold)
 NORMAL=$(tput sgr0)
 GREEN=$(tput setaf 2)
@@ -64,29 +65,62 @@ echo ""
 read -p "Paste OAuth Client ID: " OAUTH_CLIENT_ID
 read -p "Paste OAuth Client Secret: " OAUTH_CLIENT_SECRET
 
-# Write to .env
+# Write to .env (Frontend)
 echo ""
-echo "[4/4] Writing configuration to $ENV_FILE..."
+echo "[4/4] Writing configuration to $ENV_FILE_FRONTEND and $ENV_FILE_BACKEND..."
 
 OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
 OPENID_PROVIDER_URL="https://accounts.google.com"
 
-cat > $ENV_FILE <<EOL
-# Backend Configuration
-TARGET_PROJECT_ID=$PROJECT_ID
-TARGET_REGION=$REGION
-QUOTA_PROJECT_ID=$QUOTA_PROJECT_ID
-
-# Frontend OAuth Configuration
+# Write Frontend Config
+cat > $ENV_FILE_FRONTEND <<EOL
+# --- OAuth Configuration (Frontend) ---
 OAUTH_CLIENT_ID=$OAUTH_CLIENT_ID
 OAUTH_CLIENT_SECRET=$OAUTH_CLIENT_SECRET
 OAUTH_SCOPES="$OAUTH_SCOPES"
 OPENID_PROVIDER_URL="$OPENID_PROVIDER_URL"
+
+# --- Server Config ---
+ADK_SERVER_URL=http://127.0.0.1:8000
+EOL
+
+# Write Backend Config
+# We append to existing agent/.env or create new, but better to preserve defaults if exists? 
+# For simplicity, we will overwrite or append safe values. 
+# Re-writing complete file is safer to ensure keys are there.
+
+cat > $ENV_FILE_BACKEND <<EOL
+GOOGLE_GENAI_USE_VERTEXAI=TRUE
+GOOGLE_CLOUD_LOCATION=us-central1
+
+# --- Logging Configuration ---
+ENABLE_ADK_LOGGING=0
+LOGGING_PROJECT_ID=
+LOGGING_DATASET_ID=adk_logs
+LOGGING_TABLE_ID=agent_events
+
+# --- Target Environment ---
+TARGET_PROJECT_ID=$PROJECT_ID
+QUOTA_PROJECT_ID=$QUOTA_PROJECT_ID
+TARGET_REGION=$REGION
+
+# --- Billing Data Configuration ---
+BILLING_PROJECT_ID=
+BILLING_DATASET_ID=
+BILLING_TABLE_ID=
+
+# --- Agent Settings ---
+AGENT_NAME=BigQuery_Operations_Agent
+AGENT_MODEL=gemini-2.5-flash
+
+# --- Image Generation Settings ---
+IMAGE_GENERATION_MODEL=gemini-2.5-flash-image
 EOL
 
 echo ""
 echo "${GREEN}Setup Complete!${RESET}" 
-echo "Configuration saved to $ENV_FILE."
+echo "Frontend config saved to $ENV_FILE_FRONTEND"
+echo "Backend config saved to $ENV_FILE_BACKEND"
 echo "You can now run the application with:"
 echo "  ${BOLD}source venv/bin/activate${RESET}"
 echo "  ${BOLD}python gradio_bqops.py${RESET}"

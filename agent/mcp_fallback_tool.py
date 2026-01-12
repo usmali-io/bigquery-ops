@@ -4,7 +4,7 @@ import requests
 import json
 import google.auth
 import google.auth.transport.requests
-from . import config
+import agent
 from . import context
 
 def execute_sql_via_mcp(query: str):
@@ -20,7 +20,7 @@ def execute_sql_via_mcp(query: str):
     # 2. Authenticate if token is missing (Fallback Logic)
     if not token:
         # Try getting from ADC directly
-        credentials, _ = google.auth.default(quota_project_id=config.QUOTA_PROJECT_ID)
+        credentials, _ = google.auth.default(quota_project_id=agent.QUOTA_PROJECT_ID)
         if not credentials.token:
              credentials.refresh(google.auth.transport.requests.Request())
         token = credentials.token
@@ -33,7 +33,7 @@ def execute_sql_via_mcp(query: str):
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "x-goog-user-project": config.QUOTA_PROJECT_ID # CRITICAL for billing/user creds
+        "x-goog-user-project": agent.QUOTA_PROJECT_ID # CRITICAL for billing/user creds
     }
 
     # 3. Construct JSON-RPC Request
@@ -44,7 +44,7 @@ def execute_sql_via_mcp(query: str):
             "name": "execute_sql",
             "arguments": {
                 "query": query,
-                "project_id": config.TARGET_PROJECT_ID
+                "project_id": agent.TARGET_PROJECT_ID
             }
         },
         "id": 1
