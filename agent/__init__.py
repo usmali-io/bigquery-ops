@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file inside the agent directory
-# We look for .env in the same directory as this __init__.py file
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(env_path)
 
@@ -28,12 +27,11 @@ if ENABLE_ADK_LOGGING and not LOGGING_PROJECT_ID:
 
 # Set Google Cloud Quota Project explicitly for libraries that check this env var
 os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = QUOTA_PROJECT_ID
-# CRITICAL: Force GOOGLE_CLOUD_PROJECT to ensure Vertex AI calls use the correct project
-# instead of defaulting to the environment's project (e.g., cloudtop-vn).
 if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
     os.environ["GOOGLE_CLOUD_PROJECT"] = QUOTA_PROJECT_ID
 
 TARGET_REGION = os.getenv("TARGET_REGION", "")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 # --- Billing Data Configuration ---
 # Project and Dataset containing the Standard Cloud Billing Export

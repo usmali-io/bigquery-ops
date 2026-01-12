@@ -46,8 +46,11 @@ def _init_vertex_ai():
     try:
         # Vertex AI Generative models often require specific regions (like us-central1),
         # not multi-regions (like region-us).
-        location = agent.TARGET_REGION
-        if location.startswith("region-") or location == "US":
+        location = agent.GOOGLE_CLOUD_LOCATION or agent.TARGET_REGION
+        # Vertex AI Generative Models support a specific set of regions.
+        # If the configured region is 'US', 'EU', or 'region-*', or empty, fallback to 'us-central1'.
+        if not location or location.startswith("region-") or location in ["US", "EU"]:
+            print(f"Warning: Region '{location}' may not be supported by Vertex AI GenAI. Defaulting to 'us-central1'.")
             location = "us-central1"
             
         vertexai.init(project=agent.QUOTA_PROJECT_ID, location=location)
@@ -99,7 +102,7 @@ def get_expensive_queries_by_slot_hours(days: int = 30):
     """Identifies the top 10 most expensive queries based on slot usage."""
     sql = f"""
         SELECT query, total_slot_ms / (1000 * 60 * 60) AS slot_hours
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
         WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
         ORDER BY total_slot_ms DESC LIMIT 10
     """
@@ -117,7 +120,7 @@ def get_top_time_travel_consumers():
             total_physical_bytes / (1024*1024*1024) AS total_gb,
             time_travel_physical_bytes / (1024*1024*1024) AS time_travel_gb,
             ROUND(SAFE_DIVIDE(time_travel_physical_bytes, total_physical_bytes) * 100, 2) AS time_travel_pct
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE`
         WHERE time_travel_physical_bytes > 0
         ORDER BY time_travel_physical_bytes DESC
         LIMIT 20
@@ -134,7 +137,7 @@ def forecast_monthly_costs(days: int = 30):
                 EXTRACT(DATE FROM creation_time) as usage_date,
                 SUM(total_slot_ms) / (1000*60*60) as daily_slot_hours,
                 SUM(total_bytes_billed) / (1024*1024*1024*1024) as daily_tb_billed
-            FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
             WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
             GROUP BY 1
         )
@@ -153,8 +156,8 @@ def identify_large_unpartitioned_tables():
     """Finds tables that are large but do not have partitioning enabled."""
     sql = f"""
         SELECT t.table_schema, t.table_name, t.total_logical_bytes
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
-        JOIN `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLES` AS tbl
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
+        JOIN `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLES` AS tbl
         ON t.table_schema = tbl.table_schema AND t.table_name = tbl.table_name
         WHERE tbl.ddl NOT LIKE '%PARTITION BY%' AND t.total_logical_bytes > 0
         ORDER BY t.total_logical_bytes DESC LIMIT 20
@@ -169,8 +172,8 @@ def analyze_storage_compression_model():
         ROUND(SAFE_DIVIDE(t.total_logical_bytes, (t.total_physical_bytes + t.time_travel_physical_bytes + t.fail_safe_physical_bytes)), 2) AS effective_compression_ratio,
         t.total_logical_bytes,
         (t.total_physical_bytes + t.time_travel_physical_bytes + t.fail_safe_physical_bytes) AS total_physical_bytes_all_features
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
-        LEFT JOIN `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.SCHEMATA_OPTIONS` AS s
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
+        LEFT JOIN `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.SCHEMATA_OPTIONS` AS s
         ON t.table_schema = s.schema_name AND s.option_name = 'storage_billing_model'
         WHERE (s.option_value = 'LOGICAL' OR s.option_value IS NULL) AND t.total_physical_bytes > 0
         ORDER BY effective_compression_ratio DESC LIMIT 20
@@ -181,9 +184,9 @@ def find_unused_tables(days_inactive: int = 180):
     """Identifies tables that have not been queried in the last N days."""
     sql = f"""
         SELECT DISTINCT t.table_schema, t.table_name, t.total_logical_bytes
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
         WHERE NOT EXISTS (
-          SELECT 1 FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT` AS j,
+          SELECT 1 FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT` AS j,
           UNNEST(j.referenced_tables) AS ref
           WHERE j.creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days_inactive DAY)
           AND ref.table_id = t.table_name AND ref.dataset_id = t.table_schema
@@ -214,7 +217,7 @@ def check_table_permissions(table_name: str):
 
     sql = f"""
         SELECT grantee, privilege_type, object_schema, object_name
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.OBJECT_PRIVILEGES`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.OBJECT_PRIVILEGES`
         WHERE object_type = 'TABLE' AND {where_clause} AND privilege_type = 'SELECT'
     """
     return _run_query(sql, params)
@@ -279,7 +282,7 @@ def get_recent_table_users(table_name: str, days: int = 30):
 
     sql = f"""
         SELECT DISTINCT user_email, creation_time, query
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`,
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`,
         UNNEST(referenced_tables) AS ref
         WHERE ref.table_id = @table_id {extra_filter}
         AND creation_time BETWEEN TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY) AND CURRENT_TIMESTAMP()
@@ -298,7 +301,7 @@ def get_iam_policy_recommendations():
             target_resources,
             primary_impact,
             additional_details
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
         WHERE recommender = 'google.iam.policy.Recommender'
         AND state = 'ACTIVE'
         ORDER BY last_updated_time DESC
@@ -312,7 +315,7 @@ def get_common_query_errors(days: int = 30):
     """Returns the most frequent error messages from the last N days (Default: 30)."""
     sql = f"""
         SELECT error_result.reason, COUNT(*) AS error_count
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
         WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
         AND error_result IS NOT NULL
         GROUP BY 1 ORDER BY error_count DESC LIMIT 10
@@ -325,7 +328,7 @@ def get_hourly_slot_consumption(days: int = 30):
     sql = f"""
         SELECT EXTRACT(HOUR FROM creation_time) AS hour_of_day,
         SUM(total_slot_ms) / (1000 * 60 * 60) AS total_slot_hours
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
         WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
         GROUP BY 1 ORDER BY total_slot_hours DESC
     """
@@ -336,7 +339,7 @@ def get_most_frequently_queried_tables(days: int = 30):
     """Returns the top 20 tables that are queried most often (Default: 30)."""
     sql = f"""
         SELECT ref.table_id, ref.dataset_id, COUNT(*) AS query_count
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`,
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`,
         UNNEST(referenced_tables) AS ref
         WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
         GROUP BY 1, 2 ORDER BY query_count DESC LIMIT 20
@@ -352,7 +355,7 @@ def check_slot_capacity_saturation():
         SELECT period_start,
         SUM(period_slot_ms) / 1000 AS total_slot_seconds,
         COUNT(DISTINCT job_id) AS active_jobs
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_TIMELINE_BY_PROJECT`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_TIMELINE_BY_PROJECT`
         WHERE period_start > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 6 HOUR)
         GROUP BY 1 ORDER BY 1 DESC LIMIT 100
     """
@@ -363,8 +366,8 @@ def suggest_partitioning_keys(days: int = 30):
     sql = f"""
         WITH LargeUnpart AS (
             SELECT t.table_schema, t.table_name, t.total_logical_bytes
-            FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` t
-            JOIN `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLES` tbl
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` t
+            JOIN `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLES` tbl
             ON t.table_schema = tbl.table_schema AND t.table_name = tbl.table_name
             WHERE tbl.ddl NOT LIKE '%PARTITION BY%'
             AND t.total_logical_bytes > 10737418240 -- 10GB
@@ -374,7 +377,7 @@ def suggest_partitioning_keys(days: int = 30):
             l.table_name,
             l.total_logical_bytes / (1024*1024*1024) as size_gb,
             j.query
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT` j
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT` j
         CROSS JOIN UNNEST(j.referenced_tables) ref
         JOIN LargeUnpart l ON ref.table_id = l.table_name
         WHERE j.creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
@@ -435,7 +438,7 @@ def analyze_recent_queries_for_antipatterns(days: int = 30):
         SELECT user_email, job_id, query,
         ROUND(total_bytes_processed / 1073741824, 2) AS gb_processed,
         ROUND(total_slot_ms / 3600000, 2) AS slot_hours
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
         WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
         AND statement_type = 'SELECT'
         QUALIFY ROW_NUMBER() OVER(PARTITION BY query ORDER BY total_slot_ms DESC) = 1
@@ -475,7 +478,7 @@ def get_partition_cluster_recommendations():
             target_resources,
             primary_impact,
             additional_details
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
         WHERE recommender = 'google.bigquery.table.PartitionClusterRecommender'
         AND state = 'ACTIVE'
         ORDER BY last_updated_time DESC
@@ -494,7 +497,7 @@ def get_materialized_view_recommendations():
             target_resources,
             primary_impact,
             additional_details
-        FROM `{agent.TARGET_PROJECT_ID}.{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.RECOMMENDATIONS`
         WHERE recommender LIKE 'google.bigquery.materializedview%'
         AND state = 'ACTIVE'
         ORDER BY last_updated_time DESC

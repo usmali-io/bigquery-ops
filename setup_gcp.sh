@@ -44,14 +44,26 @@ gcloud services enable \
 
 echo "${GREEN}APIs enabled successfully.${RESET}"
 
-# 3. Quota Project
+# 3. Region Configuration
+echo ""
+echo "[3/7] BigQuery Data Location"
+echo "BigQuery Project Data Location (for Information Schema target config)."
+echo "Examples: Enter 'US' or 'EU' for multi-region, or specific region like 'us-central1'."
+read -p "Target Region (default: US): " REGION
+REGION=${REGION:-US}
 # Usually same as target project for simple setups
 QUOTA_PROJECT_ID=$PROJECT_ID
-REGION="us-central1"
+
+# 4. Vertex AI Configuration
+echo ""
+echo "[4/7] Vertex AI Compute Region (for GenAI models)"
+echo "Generative Models often require specific regions (like us-central1). Do not use multi-regions here."
+read -p "Vertex AI Region (default: us-central1): " GOOGLE_CLOUD_LOCATION
+GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
 
 # 4. OAuth Setup (Manual Step)
 echo ""
-echo "[3/4] OAuth 2.0 Configuration"
+echo "[5/7] OAuth 2.0 Configuration"
 echo "${YELLOW}NOTE: Google requires you to manually create the OAuth Client credentials in the Console.${RESET}"
 echo ""
 echo "Please follow these steps:"
@@ -62,12 +74,43 @@ echo "4. Authorized Redirect URIs: ${BOLD}http://localhost:7860/login/callback${
 echo "5. Click 'Create' and copy the Client ID and Client Secret."
 echo ""
 
-read -p "Paste OAuth Client ID: " OAUTH_CLIENT_ID
-read -p "Paste OAuth Client Secret: " OAUTH_CLIENT_SECRET
+read -p "Paste OAuth Client ID (leave empty if you want to export them seperately at run time): " OAUTH_CLIENT_ID
+read -p "Paste OAuth Client Secret (leave empty if you want to export them seperately at run time): " OAUTH_CLIENT_SECRET
+
+# 5. Billing Configuration
+echo ""
+echo "[6/7] Billing Configuration (Optional)"
+echo "To enable cost analysis features, provide your Standard Cloud Billing Export table details."
+echo "Press Enter to skip if not configured."
+echo ""
+read -p "Billing Project ID (default: $PROJECT_ID): " BILLING_PROJECT_ID
+BILLING_PROJECT_ID=${BILLING_PROJECT_ID:-$PROJECT_ID}
+read -p "Billing Dataset ID: " BILLING_DATASET_ID
+read -p "Billing Table ID: " BILLING_TABLE_ID
+
+# 6. Logging Configuration
+echo ""
+echo "[7/7] Logging Configuration (Optional)"
+echo "The agent can log events and analytics to BigQuery."
+read -p "Enable ADK Logging? [y/N]: " ENABLE_LOGGING_CONFIRM
+if [[ "$ENABLE_LOGGING_CONFIRM" =~ ^[Yy]$ ]]; then
+    ENABLE_ADK_LOGGING=1
+    read -p "Logging Project ID (default: $PROJECT_ID): " LOGGING_PROJECT_ID
+    LOGGING_PROJECT_ID=${LOGGING_PROJECT_ID:-$PROJECT_ID}
+    read -p "Logging Dataset ID (default: adk_logs): " LOGGING_DATASET_ID
+    LOGGING_DATASET_ID=${LOGGING_DATASET_ID:-adk_logs}
+    read -p "Logging Table ID (default: agent_events): " LOGGING_TABLE_ID
+    LOGGING_TABLE_ID=${LOGGING_TABLE_ID:-agent_events}
+else
+    ENABLE_ADK_LOGGING=0
+    LOGGING_PROJECT_ID=""
+    LOGGING_DATASET_ID="adk_logs"
+    LOGGING_TABLE_ID="agent_events"
+fi
 
 # Write to .env (Frontend)
 echo ""
-echo "[4/4] Writing configuration to $ENV_FILE_FRONTEND and $ENV_FILE_BACKEND..."
+echo "Writing configuration to $ENV_FILE_FRONTEND and $ENV_FILE_BACKEND..."
 
 OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
 OPENID_PROVIDER_URL="https://accounts.google.com"
@@ -91,23 +134,25 @@ EOL
 
 cat > $ENV_FILE_BACKEND <<EOL
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
-GOOGLE_CLOUD_LOCATION=us-central1
+# Region for Vertex AI Compute/GenAI (e.g. us-central1)
+GOOGLE_CLOUD_LOCATION=$GOOGLE_CLOUD_LOCATION
 
 # --- Logging Configuration ---
-ENABLE_ADK_LOGGING=0
-LOGGING_PROJECT_ID=
-LOGGING_DATASET_ID=adk_logs
-LOGGING_TABLE_ID=agent_events
+ENABLE_ADK_LOGGING=$ENABLE_ADK_LOGGING
+LOGGING_PROJECT_ID=$LOGGING_PROJECT_ID
+LOGGING_DATASET_ID=$LOGGING_DATASET_ID
+LOGGING_TABLE_ID=$LOGGING_TABLE_ID
 
 # --- Target Environment ---
 TARGET_PROJECT_ID=$PROJECT_ID
 QUOTA_PROJECT_ID=$QUOTA_PROJECT_ID
+# BigQuery Data Region (e.g. US, EU, or us-central1)
 TARGET_REGION=$REGION
 
 # --- Billing Data Configuration ---
-BILLING_PROJECT_ID=
-BILLING_DATASET_ID=
-BILLING_TABLE_ID=
+BILLING_PROJECT_ID=$BILLING_PROJECT_ID
+BILLING_DATASET_ID=$BILLING_DATASET_ID
+BILLING_TABLE_ID=$BILLING_TABLE_ID
 
 # --- Agent Settings ---
 AGENT_NAME=BigQuery_Operations_Agent
