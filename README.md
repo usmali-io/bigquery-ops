@@ -119,7 +119,8 @@ Contains OAuth credentials and Server URL.
 ```bash
 # Backend Configuration
 export TARGET_PROJECT_ID="your-project-id"
-export TARGET_REGION="eg us-central1"
+export TARGET_REGION="US" # BigQuery Data/information schema Region (e.g. US, EU, or us-central1)
+export GOOGLE_CLOUD_LOCATION="us-central1" # Vertex AI Compute Region (must be specific, e.g. us-central1)
 export QUOTA_PROJECT_ID="your-project-id"
 
 # Frontend OAuth Configuration (Required for UI)
