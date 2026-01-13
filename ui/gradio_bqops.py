@@ -541,7 +541,10 @@ if __name__ == "__main__":
                     reset_btn = gr.Button("🔄 Reset Conversation", variant="secondary", size="sm")
                 
                 chatbot = gr.Chatbot(label="Chat History", height=550, type="messages")
-                msg_input = gr.Textbox(label="Message", placeholder="Ask about costs, security, or performance...")
+                with gr.Row(elem_id="chat_input_row"):
+                    # show_label=False to allow perfect alignment with the Send button
+                    msg_input = gr.Textbox(show_label=False, placeholder="Ask about costs, security, or performance...", scale=9)
+                    send_btn = gr.Button("Send", variant="primary", scale=1)
                 
                 suggestion_dataset = gr.Dataset(
                     label="Follow-up Suggestions",
@@ -575,6 +578,7 @@ if __name__ == "__main__":
         plot_visible_state = gr.State(value=False)
 
         # Updated Submit Event: Removed duplicate output viz_column
+        # Trigger on Enter
         msg_input.submit(
             handle_chat_and_plot,
             [msg_input, chatbot],
@@ -591,15 +595,9 @@ if __name__ == "__main__":
                 suggestion_dataset
             ]
         )
-        
-        toggle_btn.click(toggle_plot_visibility, [plot_visible_state], [plot_visible_state, chat_column, viz_column, toggle_btn])
-        
-        # New Feature: Click to Auto-Submit Follow-ups
-        suggestion_dataset.click(
-            populate_input, 
-            inputs=[suggestion_dataset], 
-            outputs=[msg_input]
-        ).then(
+
+        # Trigger on Send Button Click
+        send_btn.click(
             handle_chat_and_plot,
             [msg_input, chatbot],
             [
@@ -614,6 +612,16 @@ if __name__ == "__main__":
                 download_btn,
                 suggestion_dataset
             ]
+        )
+        
+        toggle_btn.click(toggle_plot_visibility, [plot_visible_state], [plot_visible_state, chat_column, viz_column, toggle_btn])
+        
+        # New Feature: Click to Populate Input ONLY (No Auto-Submit)
+        suggestion_dataset.click(
+            populate_input, 
+            inputs=[suggestion_dataset], 
+            outputs=[msg_input],
+            show_progress="hidden"
         )
         
         # Updated Reset Event: Removed duplicate output viz_column
