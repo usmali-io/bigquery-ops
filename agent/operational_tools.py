@@ -164,19 +164,66 @@ def identify_large_unpartitioned_tables():
     """
     return _run_query(sql)
 
+# Pricing Constants (US Multi-region estimates)
+LOGICAL_ACTIVE_PRICE = 0.02
+LOGICAL_LONG_TERM_PRICE = 0.01
+PHYSICAL_ACTIVE_PRICE = 0.04
+PHYSICAL_LONG_TERM_PRICE = 0.02
+
 def analyze_storage_compression_model():
-    """Compares Logical vs. Physical storage costs."""
+    """
+    Compares Logical vs. Physical storage costs and estimates savings.
+    
+    IMPORTANT: When presenting these results, you MUST:
+    1. Mention that the savings are "indicative" and based on US Multi-region list prices.
+    2. Explicitly state the "effective_compression_ratio" for each table.
+    """
     sql = f"""
-        SELECT t.table_schema, t.table_name,
-        ROUND(SAFE_DIVIDE(t.total_logical_bytes, t.total_physical_bytes), 2) AS normal_compression_ratio,
-        ROUND(SAFE_DIVIDE(t.total_logical_bytes, (t.total_physical_bytes + t.time_travel_physical_bytes + t.fail_safe_physical_bytes)), 2) AS effective_compression_ratio,
-        t.total_logical_bytes,
-        (t.total_physical_bytes + t.time_travel_physical_bytes + t.fail_safe_physical_bytes) AS total_physical_bytes_all_features
-        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
-        LEFT JOIN `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.SCHEMATA_OPTIONS` AS s
-        ON t.table_schema = s.schema_name AND s.option_name = 'storage_billing_model'
-        WHERE (s.option_value = 'LOGICAL' OR s.option_value IS NULL) AND t.total_physical_bytes > 0
-        ORDER BY effective_compression_ratio DESC LIMIT 20
+        WITH StorageData AS (
+            SELECT 
+                t.table_schema, 
+                t.table_name,
+                t.active_logical_bytes,
+                t.long_term_logical_bytes,
+                t.active_physical_bytes,
+                t.long_term_physical_bytes,
+                t.time_travel_physical_bytes,
+                t.fail_safe_physical_bytes,
+                t.total_logical_bytes,
+                t.total_physical_bytes,
+                s.option_value as billing_model
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.TABLE_STORAGE` AS t
+            LEFT JOIN `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.SCHEMATA_OPTIONS` AS s
+            ON t.table_schema = s.schema_name AND s.option_name = 'storage_billing_model'
+            WHERE t.total_physical_bytes > 0
+        ),
+        CostCalculation AS (
+            SELECT
+                *,
+                -- Logical Cost Calculation
+                ((active_logical_bytes / POW(1024, 3)) * {LOGICAL_ACTIVE_PRICE}) + 
+                ((long_term_logical_bytes / POW(1024, 3)) * {LOGICAL_LONG_TERM_PRICE}) AS monthly_logical_cost_usd,
+                
+                -- Physical Cost Calculation (Time Travel & Fail Safe are usually charged at Active Physical rates)
+                ((active_physical_bytes / POW(1024, 3)) * {PHYSICAL_ACTIVE_PRICE}) + 
+                ((long_term_physical_bytes / POW(1024, 3)) * {PHYSICAL_LONG_TERM_PRICE}) +
+                (((time_travel_physical_bytes + fail_safe_physical_bytes) / POW(1024, 3)) * {PHYSICAL_ACTIVE_PRICE}) AS monthly_physical_cost_model_usd
+            FROM StorageData
+        )
+        SELECT 
+            table_schema, 
+            table_name,
+            ROUND(SAFE_DIVIDE(total_logical_bytes, total_physical_bytes), 2) AS normal_compression_ratio,
+            ROUND(SAFE_DIVIDE(total_logical_bytes, (total_physical_bytes + time_travel_physical_bytes + fail_safe_physical_bytes)), 2) AS effective_compression_ratio,
+            ROUND(monthly_logical_cost_usd, 2) AS current_monthly_cost_usd,
+            ROUND(monthly_physical_cost_model_usd, 2) AS estimated_physical_cost_usd,
+            ROUND(monthly_logical_cost_usd - monthly_physical_cost_model_usd, 2) AS potential_savings_usd,
+            'Savings are indicative (based on US Multi-region list prices)' AS pricing_note,
+            total_logical_bytes,
+            (total_physical_bytes + time_travel_physical_bytes + fail_safe_physical_bytes) AS total_physical_bytes_all_features
+        FROM CostCalculation
+        WHERE (billing_model = 'LOGICAL' OR billing_model IS NULL)
+        ORDER BY potential_savings_usd DESC LIMIT 20
     """
     return _run_query(sql)
 
