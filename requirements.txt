@@ -13,3 +13,6 @@ fastapi
 # Note: Ensure google-adk is installed (e.g., pip install google-adk or from local source)
 google-adk
 google-auth-oauthlib
+markdown
+vl-convert-python
+fpdf2

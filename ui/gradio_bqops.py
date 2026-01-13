@@ -15,6 +15,9 @@ import warnings
 import base64
 import io
 import fastapi
+import markdown
+from fpdf import FPDF
+import vl_convert as vlc
 from PIL import Image as PILImage
 from dotenv import load_dotenv
 
@@ -283,7 +286,7 @@ def extract_image_from_history(agent_response_json):
     return None
 
 # --- Main Function to Handle Chat and Plotting ---
-def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, token: gr.OAuthToken | None):
+def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, token: gr.OAuthToken | None, session_viz: list):
     print(f"Gradio client received: '{message}'")
     
     # 1. Call the Agent
@@ -319,7 +322,8 @@ def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, toke
             gr.update(visible=False), gr.update(visible=False), 
             gr.update(visible=False, scale=0), gr.update(scale=20), 
             False, gr.update(visible=False), gr.update(visible=False),
-            gr.update(visible=False)
+            gr.update(visible=False),
+            session_viz
         )
 
     # 2. Extract Content (Text)
@@ -458,18 +462,34 @@ def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, toke
         toggle_btn_update = gr.update(visible=True, value="Maximize Chart")
 
     if viz_visible:
+        # Capture for Report
+        try:
+            if dashboard_image_path:
+                buffered = io.BytesIO()
+                dashboard_image_path.save(buffered, format="PNG")
+                img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                session_viz.append(f'<img src="data:image/png;base64,{img_b64}" width="600" /><br/>')
+            elif plot_figure:
+                png_bytes = vlc.vegalite_to_png(plot_figure.to_json(), scale=2)
+                img_b64 = base64.b64encode(png_bytes).decode("utf-8")
+                session_viz.append(f'<img src="data:image/png;base64,{img_b64}" width="600" /><br/>')
+        except Exception as e:
+            print(f"Error capturing viz: {e}")
+
         return (
             "", history, plot_update, image_update, 
             gr.update(visible=True, scale=1), gr.update(scale=2), 
             False, toggle_btn_update, download_update,
-            suggestion_update
+            suggestion_update,
+            session_viz
         )
     else:
         return (
             "", history, gr.update(visible=False), gr.update(visible=False), 
             gr.update(visible=False, scale=0), gr.update(scale=20), 
             False, gr.update(visible=False), gr.update(value=None, visible=False),
-            suggestion_update
+            suggestion_update,
+            session_viz
         )
 
 # --- Helper: Populate Input ---
@@ -511,11 +531,11 @@ def check_auth_status(request: gr.Request):
         return gr.update(visible=False), gr.update(value=user_label, visible=True)
     return gr.update(visible=True), gr.update(visible=False)
 
-# --- Report Generation Logic ---
-def generate_report(history, token: gr.OAuthToken | None):
+# --- PDF Report Generation Logic ---
+def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list):
     """
-    Triggers the agent to generate a comprehensive report based on the session.
-    Writes the result to a temporary Markdown file.
+    Triggers the agent to generate a comprehensive report, converts it to PDF using fpdf2,
+    and appends any session visualizations.
     """
     
     # 1. Define the Report Prompt
@@ -526,24 +546,9 @@ def generate_report(history, token: gr.OAuthToken | None):
         "Do not include chat pleasantries, just the report content."
     )
     
-    # 2. Reuse handle_chat_and_plot logic to call agent
-    # We pass the history as is, so the agent has full context.
-    # The response will be the report.
-    print(f"DEBUG: Generating report with prompt: {report_prompt}")
+    print(f"DEBUG: Generating PDF report with prompt: {report_prompt}")
     
-    # Execute the chat turn
-    # We need to construct a fake 'message' call but we don't necessarily want it to clutter the chat history 
-    # visually until the report is ready. 
-    # However, standard practice is to show the user's request.
-    
-    # Call internal handler
-    # Note: handle_chat_and_plot updates history and UI elements.
-    # We want to intercept the text to save it to a file.
-    
-    # Let's perform a direct agent call here to avoid UI side-effects first, 
-    # OR better: use handle_chat_and_plot and just extract the last message.
-    # Direct call is cleaner for file generation.
-    
+    # 2. Call Agent
     run_url = f"{ADK_SERVER_BASE_URL}/run"
     state_delta = {}
     if token:
@@ -559,12 +564,12 @@ def generate_report(history, token: gr.OAuthToken | None):
         "state_delta": state_delta
     }
 
+    full_response_text = ""
     try:
         response = requests.post(run_url, json=payload, timeout=300)
         response.raise_for_status()
         agent_response_json = response.json()
         
-        # Extract text
         try:
             full_response_text = agent_response_json[-1]['content']['parts'][0]['text']
         except (KeyError, IndexError):
@@ -573,21 +578,74 @@ def generate_report(history, token: gr.OAuthToken | None):
     except Exception as e:
         full_response_text = f"# Error Generating Report\n\n{str(e)}"
     
-    # 3. Write to File
+    # 3. Convert Markdown to HTML
+    html_content = markdown.markdown(full_response_text, extensions=['extra'])
+    
+    # 4. Generate PDF using fpdf2
     timestamp = uuid.uuid4().hex[:8]
-    filename = f"bqops_report_{timestamp}.md"
+    filename = f"bqops_report_{timestamp}.pdf"
     file_path = os.path.join(tempfile.gettempdir(), filename)
     
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(full_response_text)
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=12)
         
-    print(f"DEBUG: Report saved to {file_path}")
+        # Add basic styling via simple HTML if supported, or just write text?
+        # fpdf2 write_html supports basic tags: h1-h6, b, i, u, a, p, br, blockquote, img, li, ul, ol
+        
+        # Pre-process HTML for fpdf2 quirks if needed
+        # Ensuring images are handled manually if strict control is needed, 
+        # but write_html supports <img> with data uri in recent versions? 
+        # Actually fpdf2 supports <img> tags.
+        
+        pdf.write_html(html_content)
+        
+        # Append Visualizations (Manual Image Injection)
+        if session_viz:
+            pdf.add_page()
+            pdf.set_font("Helvetica", style='B', size=16)
+            pdf.cell(0, 10, "Appendix: Session Visualizations", new_x="LMARGIN", new_y="NEXT", align='C')
+            pdf.ln(10)
+            
+            for viz_html in session_viz:
+                # Extract base64 from the img tag we stored: <img src="data:image/png;base64,..." ... />
+                # Regex to extract it
+                match = re.search(r'start_src="data:image/png;base64,(.*?)"', viz_html.replace('src="', 'start_src="'))
+                if match:
+                    img_data = match.group(1)
+                    img_bytes = base64.b64decode(img_data)
+                    
+                    # Save temp image for fpdf (it handles bytes/streams in recent versions, but file is safest)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                        tmp_img.write(img_bytes)
+                        tmp_img_path = tmp_img.name
+                    
+                    try:
+                        # Center image
+                        # Get page width
+                        w = pdf.epw
+                        pdf.image(tmp_img_path, w=w) 
+                        pdf.ln(10)
+                    finally:
+                         os.unlink(tmp_img_path)
+
+        pdf.output(file_path)
+
+    except Exception as e:
+        print(f"PDF generation error: {e}")
+        file_path = None
+
+    print(f"DEBUG: PDF Report saved to {file_path}")
     
-    # 4. Return updates: Add prompt & response to history, show download button
-    history.append({"role": "user", "content": "📑 Generate Report"})
-    history.append({"role": "assistant", "content": f"**Report Generated.**\n\nYou can download it using the button above.\n\n*Preview:*\n\n{full_response_text[:500]}..."})
-    
-    return history, gr.update(value=file_path, visible=True)
+    # 5. Return updates
+    history.append({"role": "user", "content": "📑 Generate PDF Report"})
+    if file_path:
+        history.append({"role": "assistant", "content": f"**PDF Report Generated.**\n\nContains {len(session_viz)} visualizations.\nDownload it using the button above."})
+        return history, gr.update(value=file_path, visible=True)
+    else:
+        history.append({"role": "assistant", "content": "❌ **Error generating PDF report.**"})
+        return history, gr.update(visible=False)
 
 # ... (Auth Check Reuse) ...
 
@@ -619,8 +677,8 @@ if __name__ == "__main__":
             with gr.Column(scale=20) as chat_column:
                 with gr.Row():
                     reset_btn = gr.Button("🔄 Reset Conversation", variant="secondary", size="sm")
-                    gen_report_btn = gr.Button("📑 Generate Report", variant="secondary", size="sm")
-                    report_download_btn = gr.DownloadButton("Download Report", visible=False, size="sm")
+                    gen_report_btn = gr.Button("📑 Generate PDF Report", variant="secondary", size="sm")
+                    report_download_btn = gr.DownloadButton("Download PDF", visible=False, size="sm")
                 
                 chatbot = gr.Chatbot(label="Chat History", height=550, type="messages")
                 with gr.Row(elem_id="chat_input_row"):
@@ -658,12 +716,13 @@ if __name__ == "__main__":
                 download_btn = gr.DownloadButton("Download CSV", visible=False)
 
         plot_visible_state = gr.State(value=False)
+        session_viz = gr.State(value=[])
 
         # Updated Submit Event: Removed duplicate output viz_column
         # Trigger on Enter
         msg_input.submit(
             handle_chat_and_plot,
-            [msg_input, chatbot],
+            [msg_input, chatbot, session_viz],
             [
                 msg_input, 
                 chatbot, 
@@ -674,14 +733,15 @@ if __name__ == "__main__":
                 plot_visible_state, 
                 toggle_btn, 
                 download_btn,
-                suggestion_dataset
+                suggestion_dataset,
+                session_viz
             ]
         )
 
         # Trigger on Send Button Click
         send_btn.click(
             handle_chat_and_plot,
-            [msg_input, chatbot],
+            [msg_input, chatbot, session_viz],
             [
                 msg_input, 
                 chatbot, 
@@ -692,7 +752,8 @@ if __name__ == "__main__":
                 plot_visible_state, 
                 toggle_btn, 
                 download_btn,
-                suggestion_dataset
+                suggestion_dataset,
+                session_viz
             ]
         )
         
@@ -726,8 +787,8 @@ if __name__ == "__main__":
         
         # Report Generation Event
         gen_report_btn.click(
-            generate_report,
-            inputs=[chatbot], # Note: We need the history? No, agent has session memory. But we need to update chatbot UI.
+            generate_pdf_report,
+            inputs=[chatbot, session_viz], 
             outputs=[chatbot, report_download_btn]
         )
 
