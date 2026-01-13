@@ -511,6 +511,86 @@ def check_auth_status(request: gr.Request):
         return gr.update(visible=False), gr.update(value=user_label, visible=True)
     return gr.update(visible=True), gr.update(visible=False)
 
+# --- Report Generation Logic ---
+def generate_report(history, token: gr.OAuthToken | None):
+    """
+    Triggers the agent to generate a comprehensive report based on the session.
+    Writes the result to a temporary Markdown file.
+    """
+    
+    # 1. Define the Report Prompt
+    report_prompt = (
+        "Based on our session so far, please generate a comprehensive 'Key Findings & Recommendations' report. "
+        "Format it as a clean Markdown document. "
+        "Include sections for: Executive Summary, Cost Optimization Opportunities, Security Risks, Performance Bottlenecks, and Next Steps. "
+        "Do not include chat pleasantries, just the report content."
+    )
+    
+    # 2. Reuse handle_chat_and_plot logic to call agent
+    # We pass the history as is, so the agent has full context.
+    # The response will be the report.
+    print(f"DEBUG: Generating report with prompt: {report_prompt}")
+    
+    # Execute the chat turn
+    # We need to construct a fake 'message' call but we don't necessarily want it to clutter the chat history 
+    # visually until the report is ready. 
+    # However, standard practice is to show the user's request.
+    
+    # Call internal handler
+    # Note: handle_chat_and_plot updates history and UI elements.
+    # We want to intercept the text to save it to a file.
+    
+    # Let's perform a direct agent call here to avoid UI side-effects first, 
+    # OR better: use handle_chat_and_plot and just extract the last message.
+    # Direct call is cleaner for file generation.
+    
+    run_url = f"{ADK_SERVER_BASE_URL}/run"
+    state_delta = {}
+    if token:
+        state_delta["oauth_token"] = token.token
+    else:
+        state_delta["oauth_token"] = None
+
+    payload = {
+        "app_name": APP_NAME,
+        "user_id": SESSION_STATE["user_id"],
+        "session_id": SESSION_STATE["session_id"],
+        "new_message": {"role": "user", "parts": [{"text": report_prompt}]},
+        "state_delta": state_delta
+    }
+
+    try:
+        response = requests.post(run_url, json=payload, timeout=300)
+        response.raise_for_status()
+        agent_response_json = response.json()
+        
+        # Extract text
+        try:
+            full_response_text = agent_response_json[-1]['content']['parts'][0]['text']
+        except (KeyError, IndexError):
+            full_response_text = "# Error: No report content received."
+
+    except Exception as e:
+        full_response_text = f"# Error Generating Report\n\n{str(e)}"
+    
+    # 3. Write to File
+    timestamp = uuid.uuid4().hex[:8]
+    filename = f"bqops_report_{timestamp}.md"
+    file_path = os.path.join(tempfile.gettempdir(), filename)
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(full_response_text)
+        
+    print(f"DEBUG: Report saved to {file_path}")
+    
+    # 4. Return updates: Add prompt & response to history, show download button
+    history.append({"role": "user", "content": "📑 Generate Report"})
+    history.append({"role": "assistant", "content": f"**Report Generated.**\n\nYou can download it using the button above.\n\n*Preview:*\n\n{full_response_text[:500]}..."})
+    
+    return history, gr.update(value=file_path, visible=True)
+
+# ... (Auth Check Reuse) ...
+
 # --- Launch ---
 if __name__ == "__main__":
     create_session_if_not_exists()
@@ -539,6 +619,8 @@ if __name__ == "__main__":
             with gr.Column(scale=20) as chat_column:
                 with gr.Row():
                     reset_btn = gr.Button("🔄 Reset Conversation", variant="secondary", size="sm")
+                    gen_report_btn = gr.Button("📑 Generate Report", variant="secondary", size="sm")
+                    report_download_btn = gr.DownloadButton("Download Report", visible=False, size="sm")
                 
                 chatbot = gr.Chatbot(label="Chat History", height=550, type="messages")
                 with gr.Row(elem_id="chat_input_row"):
@@ -640,6 +722,13 @@ if __name__ == "__main__":
                 download_btn,
                 suggestion_dataset
             ]
+        )
+        
+        # Report Generation Event
+        gen_report_btn.click(
+            generate_report,
+            inputs=[chatbot], # Note: We need the history? No, agent has session memory. But we need to update chatbot UI.
+            outputs=[chatbot, report_download_btn]
         )
 
         # Check auth status on load to toggle Login/Logout buttons
