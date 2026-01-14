@@ -664,29 +664,50 @@ def perform_full_environment_scan():
     Analyzes the entire environment across Cost, Security, and Performance,
     summarizes the findings, and generates a visual dashboard representation.
     """
-    
+    import concurrent.futures
+    import contextvars
+
     # 1. Gather Data (Running key lightweight checks in PARALLEL)
     findings = []
     
-    # Helper to run functions safely
-    def run_safe(func, *args, **kwargs):
+    # Capture the Token explicitly (Context objects are not thread-safe for reuse in run())
+    # We pass the token string to the workers, who set their own thread-local context.
+    current_token = context.get_oauth_token()
+
+    # Helper to run functions safely within the captured context
+    def run_with_token(token_val, func, *args, **kwargs):
+        # Set the token for this thread
+        if token_val:
+            context.set_oauth_token(token_val)
+            
         try:
             return func(*args, **kwargs)
         except Exception as e:
+            # Log error if needed, or just return None
+            print(f"Error in parallel execution of {func.__name__}: {e}")
             return None
 
-    # Run queries SEQUENTIALLY to avoid contextvars threading issues
-    forecast = run_safe(forecast_monthly_costs)
-    time_travel = run_safe(get_top_time_travel_consumers)
-    unused = run_safe(find_unused_tables, days_inactive=30)
-    public_datasets = run_safe(find_publicly_exposed_datasets)
-    iam_recs = run_safe(get_iam_policy_recommendations)
-    errors = run_safe(get_common_query_errors)
+    # Execute efficiently in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        future_forecast = executor.submit(run_with_token, current_token, forecast_monthly_costs)
+        future_time_travel = executor.submit(run_with_token, current_token, get_top_time_travel_consumers)
+        future_unused = executor.submit(run_with_token, current_token, find_unused_tables, days_inactive=30)
+        future_public = executor.submit(run_with_token, current_token, find_publicly_exposed_datasets)
+        future_iam = executor.submit(run_with_token, current_token, get_iam_policy_recommendations)
+        future_errors = executor.submit(run_with_token, current_token, get_common_query_errors)
+
+        # Gather results (timeouts could be added here if needed)
+        forecast = future_forecast.result()
+        time_travel = future_time_travel.result()
+        unused = future_unused.result()
+        public_datasets = future_public.result()
+        iam_recs = future_iam.result()
+        errors = future_errors.result()
 
     # 2. Synthesize Summary (Processing the results)
     
     # Cost
-    if forecast and isinstance(forecast, list) and 'forecasted_monthly_slot_hours' in forecast[0]:
+    if forecast and isinstance(forecast, list) and len(forecast) > 0 and 'forecasted_monthly_slot_hours' in forecast[0]:
          findings.append(f"Projected Monthly Slot Hours: {forecast[0]['forecasted_monthly_slot_hours']}")
     
     if time_travel:

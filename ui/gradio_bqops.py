@@ -16,6 +16,7 @@ import base64
 import io
 import fastapi
 import markdown
+import asyncio
 from fpdf import FPDF
 import vl_convert as vlc
 from PIL import Image as PILImage
@@ -23,6 +24,10 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+# Suppress noisy warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="gradio")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="gradio")
 
 # MONKEYPATCH: Debug Redirect URI
 original_generate_redirect_uri = oauth._generate_redirect_uri
@@ -33,7 +38,7 @@ def debug_generate_redirect_uri(request: fastapi.Request) -> str:
     # We strip it to ensure it matches 'http://localhost:7860/login/callback'
     if "?" in uri:
         uri = uri.split("?")[0]
-    print(f"\n[DEBUG] Cleaned Redirect URI: {uri}\n")
+    # print(f"\n[DEBUG] Cleaned Redirect URI: {uri}\n")
     return uri
 
 oauth._generate_redirect_uri = debug_generate_redirect_uri
@@ -67,7 +72,7 @@ oauth.OAuthProfile.__init__ = patched_oauth_profile_init
 
 def patched_add_oauth_routes(app: fastapi.FastAPI) -> None:
     """Add OAuth routes to the FastAPI app (login, callback handler and logout)."""
-    print(f"DEBUG: Executing patched_add_oauth_routes for app: {app}")
+    # print(f"DEBUG: Executing patched_add_oauth_routes for app: {app}")
     try:
         from authlib.integrations.base_client.errors import MismatchingStateError
         from authlib.integrations.starlette_client import OAuth
@@ -182,16 +187,7 @@ def patched_add_oauth_routes(app: fastapi.FastAPI) -> None:
     async def oauth_logout(request: fastapi.Request) -> fastapi.responses.RedirectResponse:
         """Endpoint that logs out the user (clears cookie session)."""
         request.session.clear()
-        
-        # Reset global session state to ensure backend session is also abandoned
-        print(f"Logging out: Switching from {SESSION_STATE['session_id']} to new session.")
-        SESSION_STATE["session_id"] = f"session_{uuid.uuid4()}"
-        
-        # Note: We don't strictly need to create it on the backend immediately; 
-        # the next chat interaction or reset will handle it, or we can force it here.
-        # But calling create_session_if_not_exists() here might be safer to ensure readiness.
-        create_session_if_not_exists()
-        
+        print(f"Logging out user.")
         return oauth._redirect_to_target(request)
 
 # Apply the patch
@@ -202,16 +198,32 @@ oauth._add_mocked_oauth_routes = patched_add_oauth_routes
 ADK_SERVER_BASE_URL = os.getenv("ADK_SERVER_URL", "http://127.0.0.1:8000")
 APP_NAME = "agent"
 
+# --- Session Initialization ---
+def init_session_state(request: gr.Request) -> dict:
+    """Initializes per-user session state."""
+    user_id = "gradio_user"
+    if request:
+        if request.username:
+            user_id = request.username
+        # Fallback to session info if available
+        elif hasattr(request, "session") and "oauth_info" in request.session:
+             user_info = request.session["oauth_info"].get("userinfo", {})
+             user_id = user_info.get("email") or user_info.get("preferred_username") or user_id
 
-# --- Session State ---
-SESSION_STATE = {
-    "session_id": f"session_{uuid.uuid4()}",
-    "user_id": "gradio_user"
-}
+    session_id = f"session_{uuid.uuid4()}"
+    print(f"Initializing new session: {session_id} for user: {user_id}")
+    
+    # Register session on backend
+    create_session_if_not_exists(session_id, user_id)
+    
+    return {
+        "session_id": session_id,
+        "user_id": user_id
+    }
 
-# --- Function to Create the Session on Startup ---
-def create_session_if_not_exists():
-    session_url = f"{ADK_SERVER_BASE_URL}/apps/{APP_NAME}/users/{SESSION_STATE['user_id']}/sessions/{SESSION_STATE['session_id']}"
+# --- Function to Create the Session on Backend ---
+def create_session_if_not_exists(session_id, user_id):
+    session_url = f"{ADK_SERVER_BASE_URL}/apps/{APP_NAME}/users/{user_id}/sessions/{session_id}"
     try:
         response = requests.post(session_url)
         if response.status_code not in [200, 404]: 
@@ -220,10 +232,16 @@ def create_session_if_not_exists():
         print(f"Warning: Could not init session (server might be down): {e}")
 
 # --- Helper: Reset Session ---
-def reset_conversation():
-    print("Resetting session...")
-    SESSION_STATE["session_id"] = f"session_{uuid.uuid4()}"
-    create_session_if_not_exists()
+def reset_conversation(session_state):
+    print(f"Resetting session for {session_state.get('user_id', 'unknown')}...")
+    # Generate new ID
+    new_id = f"session_{uuid.uuid4()}"
+    user_id = session_state.get("user_id", "gradio_user")
+    
+    # Update state
+    session_state["session_id"] = new_id
+    create_session_if_not_exists(new_id, user_id)
+    
     return (
         [],                                     # chatbot
         "",                                     # msg_input
@@ -269,19 +287,19 @@ def extract_image_from_history(agent_response_json):
     if not isinstance(agent_response_json, list):
         return None
 
-    print(f"DEBUG: Scanning {len(agent_response_json)} messages for image...")
+    # print(f"DEBUG: Scanning {len(agent_response_json)} messages for image...")
     
     # Use recursive search on the entire response object
     image_b64 = find_key_recursive(agent_response_json, 'dashboard_image_base64')
     
     if image_b64:
-        print(f"DEBUG: Found 'dashboard_image_base64' (Length: {len(str(image_b64))})")
+        # print(f"DEBUG: Found 'dashboard_image_base64' (Length: {len(str(image_b64))})")
         return image_b64
     
     # Fallback
     legacy_image = find_key_recursive(agent_response_json, 'dashboard_image_file')
     if legacy_image and str(legacy_image).startswith("data:image"):
-        print(f"DEBUG: Found legacy 'dashboard_image_file' (Length: {len(str(legacy_image))})")
+        # print(f"DEBUG: Found legacy 'dashboard_image_file' (Length: {len(str(legacy_image))})")
         return legacy_image
 
     print("DEBUG: No image found after deep recursive search.")
@@ -421,6 +439,13 @@ def create_pdf(html_content, session_viz, session_tables):
                 # fpdf2 has a nice table context manager
                 df = table_info["data"]
                 
+                # Sanitize DF to remove base64 images that might cause issues/printing
+                for col in df.columns:
+                    # Check first row (if exists) for huge strings starting with data:image
+                    if not df.empty and isinstance(df.iloc[0][col], str) and df.iloc[0][col].startswith("data:image") and len(df.iloc[0][col]) > 1000:
+                         print(f"DEBUG: Dropping column '{col}' from PDF table '{table_info['title']}' as it appears to contain base64 image data.")
+                         df = df.drop(columns=[col])
+
                 # Safety check: if table is too wide, it might look bad.
                 # We can try to fit it.
                 
@@ -479,8 +504,8 @@ def create_pdf(html_content, session_viz, session_tables):
         return None
 
 # --- Main Function to Handle Chat and Plotting ---
-def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, token: gr.OAuthToken | None, session_viz: list, session_tables: list):
-    print(f"Gradio client received: '{message}'")
+async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, token: gr.OAuthToken | None, session_viz: list, session_tables: list, session_state: dict):
+    print(f"Gradio client received: '{message}' (Session: {session_state.get('session_id')})")
     
     # 1. Call the Agent
     run_url = f"{ADK_SERVER_BASE_URL}/run"
@@ -495,15 +520,16 @@ def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, toke
 
     payload = {
         "app_name": APP_NAME,
-        "user_id": SESSION_STATE["user_id"],
-        "session_id": SESSION_STATE["session_id"],
+        "user_id": session_state["user_id"],
+        "session_id": session_state["session_id"],
         "new_message": {"role": "user", "parts": [{"text": message}]},
         "state_delta": state_delta
     }
 
     try:
-        # Added timeout=300 (5 minutes) to prevent premature disconnection during long agent tasks
-        response = requests.post(run_url, json=payload, timeout=300)
+        # Added timeout=300 (5 minutes) to prevent premature disconnection
+        # optimization: run blocking request in thread
+        response = await asyncio.to_thread(requests.post, run_url, json=payload, timeout=300)
         response.raise_for_status()
         agent_response_json = response.json()
     except Exception as e:
@@ -556,18 +582,26 @@ def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None, toke
             raw_suggestions = json.loads(raw_text)
             if isinstance(raw_suggestions, list):
                 suggestion_samples = [[str(s)] for s in raw_suggestions]
-                print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions.")
-        except json.JSONDecodeError as e:
-             # Handle partial JSON or extra data
-             if "Extra data" in e.msg:
-                 try:
-                     raw_suggestions = json.loads(raw_text[:e.pos])
-                     if isinstance(raw_suggestions, list):
-                         suggestion_samples = [[str(s)] for s in raw_suggestions]
-                 except:
-                     print(f"DEBUG: JSON Fallback failed: {e}")
-             else:
-                 print(f"DEBUG: JSON Decode Error: {e}")
+            # 1. Try standard JSON
+            parsed_list = json.loads(raw_text)
+            if isinstance(parsed_list, list):
+                suggestion_samples = [[str(s)] for s in parsed_list]
+            print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions via JSON.")
+        except json.JSONDecodeError:
+            # 2. Try ast.literal_eval (handles python-style lists with single quotes etc)
+            try:
+                import ast
+                parsed_list = ast.literal_eval(raw_text)
+                if isinstance(parsed_list, list):
+                    suggestion_samples = [[str(s)] for s in parsed_list]
+                print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions via ast.literal_eval.")
+            except Exception:
+                # 3. Last resort: Regex split
+                 # This is a bit hacky but works for simple lists
+                cleaned = raw_text.strip("[]")
+                suggestion_samples = [s.strip().strip('"').strip("'") for s in cleaned.split(",")]
+                suggestion_samples = [[s] for s in suggestion_samples if s] # Filter out empty strings
+                print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions via regex split.")
         except Exception as e:
             print(f"DEBUG: General Follow-up Error: {e}")
 
@@ -710,19 +744,20 @@ def toggle_plot_visibility(is_maximized):
 
 # --- Auth Status Check ---
 def check_auth_status(request: gr.Request):
-    print(f"DEBUG: check_auth_status called. Username: {request.username if request else 'None'}")
+    # print(f"DEBUG: check_auth_status called. Username: {request.username if request else 'None'}")
     
     # Try getting user from session directly if request.username is empty
     user_info = None
     if request:
         try:
             session_data = request.session
-            print(f"DEBUG: Session keys: {list(session_data.keys())}")
+            # print(f"DEBUG: Session keys: {list(session_data.keys())}")
             if "oauth_info" in session_data:
                 user_info = session_data["oauth_info"].get("userinfo", {})
-                print(f"DEBUG: Found oauth_info. Email: {user_info.get('email')}")
+                # print(f"DEBUG: Found oauth_info. Email: {user_info.get('email')}")
         except Exception as e:
-            print(f"DEBUG: Error accessing session: {e}")
+            # print(f"DEBUG: Error accessing session: {e}")
+            pass
 
     username = request.username if (request and request.username) else None
     if not username and user_info:
@@ -735,7 +770,7 @@ def check_auth_status(request: gr.Request):
     return gr.update(visible=True), gr.update(visible=False)
 
 # --- PDF Report Generation Logic ---
-def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list, session_tables: list):
+def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list, session_tables: list, session_state: dict):
     """
     Triggers the agent to generate a comprehensive report, converts it to PDF using fpdf2,
     and appends any session visualizations.
@@ -749,7 +784,7 @@ def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list,
         "Do not include chat pleasantries, just the report content."
     )
     
-    print(f"DEBUG: Generating PDF report with prompt: {report_prompt}")
+    # print(f"DEBUG: Generating PDF report with prompt: {report_prompt}")
     
     # 2. Call Agent
     run_url = f"{ADK_SERVER_BASE_URL}/run"
@@ -761,8 +796,8 @@ def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list,
 
     payload = {
         "app_name": APP_NAME,
-        "user_id": SESSION_STATE["user_id"],
-        "session_id": SESSION_STATE["session_id"],
+        "user_id": session_state["user_id"],
+        "session_id": session_state["session_id"],
         "new_message": {"role": "user", "parts": [{"text": report_prompt}]},
         "state_delta": state_delta
     }
@@ -781,8 +816,31 @@ def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list,
     except Exception as e:
         full_response_text = f"# Error Generating Report\n\n{str(e)}"
     
+    # 2.5 Clean up Agent Tags (Follow-ups, etc.)
+    full_response_text = re.sub(r'\[FOLLOW_UP\].*?(\[/FOLLOW_UP\]|$)', '', full_response_text, flags=re.DOTALL).strip()
+    full_response_text = re.sub(r'\[VEGA\].*?\[/VEGA\]', '', full_response_text, flags=re.DOTALL).strip()
+    full_response_text = re.sub(r'\[DASHBOARD_IMAGE\].*?\[/DASHBOARD_IMAGE\]', '', full_response_text, flags=re.DOTALL).strip()
+    full_response_text = re.sub(r'\[DASHBOARD_GENERATED\]', '', full_response_text, flags=re.DOTALL).strip()
+    
+    # Strip markdown images with data URIs to prevent console flooding/rendering issues
+    # Matches ![...](data:image...)
+    full_response_text = re.sub(r'!\[.*?\]\(data:image.*?\)', '', full_response_text, flags=re.DOTALL).strip()
+    # Matches <img ... src="data:image..." ...>
+    # Matches <img ... src="data:image..." ...>
+    full_response_text = re.sub(r'<img[^>]*?src=["\']data:image.*?["\'][^>]*?>', '', full_response_text, flags=re.DOTALL).strip()
+    
+    # Nuclear Option: Strip ANY data:image string found (e.g. if inside specific attributes key)
+    # This ensures no massive strings are passed to markdown/fpdf whatever the format
+    # Using a simpler pattern to avoid backtracking issues on massive strings
+    # Match any valid base64 char OR whitespace, until we hit something that clearly isn't (like a quote/tag end) or just consume a lot
+    full_response_text = re.sub(r'data:image/[a-zA-Z0-9+.;=,/\s\-]+', '', full_response_text)
+    
     # 3. Convert Markdown to HTML
-    html_content = markdown.markdown(full_response_text, extensions=['extra'])
+    try:
+        html_content = markdown.markdown(full_response_text, extensions=['extra'])
+    except Exception as e:
+        print(f"Error converting markdown: {e}")
+        html_content = f"<p>Error converting report to HTML: {e}</p><pre>{full_response_text}</pre>"
     
     # 4. Generate PDF using Helper
     # Deduplicate tables?
@@ -813,7 +871,8 @@ def generate_pdf_report(history, token: gr.OAuthToken | None, session_viz: list,
 
 # --- Launch ---
 if __name__ == "__main__":
-    create_session_if_not_exists()
+    # Session init is now handled by gr.State/init_session_state
+
 
     with gr.Blocks(theme=gr.themes.Default(), title="BigQuery Ops Agent") as demo:
         with gr.Row(elem_id="header_row"):
@@ -886,12 +945,13 @@ if __name__ == "__main__":
         plot_visible_state = gr.State(value=False)
         session_viz = gr.State(value=[])
         session_tables = gr.State(value=[])
+        session_state = gr.State(value={})
 
         # Updated Submit Event: Removed duplicate output viz_column
         # Trigger on Enter
         msg_input.submit(
             handle_chat_and_plot,
-            [msg_input, chatbot, session_viz, session_tables],
+            [msg_input, chatbot, session_viz, session_tables, session_state],
             [
                 msg_input, 
                 chatbot, 
@@ -911,7 +971,7 @@ if __name__ == "__main__":
         # Trigger on Send Button Click
         send_btn.click(
             handle_chat_and_plot,
-            [msg_input, chatbot, session_viz, session_tables],
+            [msg_input, chatbot, session_viz, session_tables, session_state],
             [
                 msg_input, 
                 chatbot, 
@@ -941,7 +1001,7 @@ if __name__ == "__main__":
         # Updated Reset Event: Removed duplicate output viz_column
         reset_btn.click(
             reset_conversation, 
-            [], 
+            [session_state], 
             [
                 chatbot, 
                 msg_input, 
@@ -961,10 +1021,13 @@ if __name__ == "__main__":
         # Report Generation Event
         gen_report_btn.click(
             generate_pdf_report,
-            inputs=[chatbot, session_viz, session_tables], 
+            inputs=[chatbot, session_viz, session_tables, session_state], 
             outputs=[chatbot, report_download_btn]
         )
 
         # Check auth status on load to toggle Login/Logout buttons
         demo.load(check_auth_status, None, [login_btn, logout_btn])
+        
+        # Init Session State on Load (Injects Request)
+        demo.load(init_session_state, None, session_state)
     demo.queue().launch(server_name="localhost", server_port=7860)
