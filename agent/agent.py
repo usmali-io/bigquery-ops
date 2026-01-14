@@ -17,8 +17,7 @@ from .mcp_fallback_tool import execute_sql_via_mcp
 # We must use quota_project_id for BigQuery API calls to work correctly with user credentials
 # and ensure we have the correct scopes for the MCP server.
 SCOPES = [
-    "https://www.googleapis.com/auth/bigquery",
-    "https://www.googleapis.com/auth/cloud-platform"
+    "https://www.googleapis.com/auth/bigquery"
 ]
 credentials, _ = google.auth.default(scopes=SCOPES, quota_project_id=agent.QUOTA_PROJECT_ID)
 if not credentials.token:
