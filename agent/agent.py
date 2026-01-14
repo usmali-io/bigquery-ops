@@ -103,10 +103,9 @@ bq_ops_agent = Agent(
 )
 
 # --- App & Plugin Integration ---
-# --- App & Plugin Integration ---
 plugins_list = [auth_plugin.AuthPlugin()]
 
-if agent.ENABLE_ADK_LOGGING: ## <- this is disabling/enabling ADK logging based on config.py
+if agent.ENABLE_ADK_LOGGING: ## <- this is disabling/enabling ADK logging based on config
     bq_logging_plugin = BigQueryAgentAnalyticsPlugin(
         project_id=agent.LOGGING_PROJECT_ID,
         dataset_id=agent.LOGGING_DATASET_ID,
