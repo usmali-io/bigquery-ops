@@ -6,11 +6,28 @@ This project includes a backend agent server and a Gradio-based frontend.
 
 ## Features
 
-- **Cost Analysis**: Forecast costs, find expensive queries, identify time travel waste.
-- **Security Scanning**: Check for public datasets, IAM recommendations.
-- **Performance Tuning**: Analyze slot consumption, query errors, partition recommendations.
-- **Visual Dashboard**: Generates comprehensive environment dashboards.
-- **Session Reporting**: Generate and download detailed PDF reports of your analysis session.
+### 💰 Cost Optimization
+- **Storage Analysis**: Compare **Logical vs. Physical** billing models to find immediate savings (Compression Analysis).
+- **Waste Detection**: Identify **Unused Tables** (inactive for >180 days) and excessive **Time Travel** storage usage.
+- **Forecasting**: Project monthly costs based on recent slot usage and storage trends.
+- **Expensive Queries**: Pinpoint top queries by slot consumption.
+
+### 🚀 Performance Tuning
+- **Anti-Pattern Detection**: Scans recent queries for common mistakes (e.g., `SELECT *`, `ORDER BY` without `LIMIT`, `REGEXP_CONTAINS`).
+- **Partitioning & Clustering**: Suggests partitioning keys for large tables and surfaces Google Cloud recommendations.
+- **Capacity Planning**: Monitors slot capacity saturation and concurrency.
+- **Materialized Views**: Identifies opportunities to accelerate queries with materialized views.
+
+### 🛡️ Security & Governance
+- **Exposure Scanning**: Detects **Publicly Exposed Datasets** (allUsers/allAuthenticatedUsers).
+- **IAM Forensics**: Audit who is querying specific tables and check active IAM policy recommendations.
+- **Permission Check**: Quickly verify who has `SELECT` access to sensitive tables.
+
+### 📊 Interactive UI & Reporting
+- **Visual Dashboards**: Generates high-level infographic dashboards summarizing your environment.
+- **Interactive Charts**: Dynamic Vega-Lite charts for cost and performance metrics (Maximize/Restore view).
+- **Data Export**: Download underlying chart data as **CSV**.
+- **PDF Reporting**: Generate comprehensive **PDF Session Reports** containing executive summaries, embedded charts, and actionable data tables.
 
 ## Prerequisites & GCP Setup (One-Time)
 
