@@ -302,7 +302,7 @@ def extract_image_from_history(agent_response_json):
         # print(f"DEBUG: Found legacy 'dashboard_image_file' (Length: {len(str(legacy_image))})")
         return legacy_image
 
-    print("DEBUG: No image found after deep recursive search.")
+    # print("DEBUG: No image found after deep recursive search.")
     return None
 
 # --- Helper: Extract Tables from Tool Output ---
