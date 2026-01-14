@@ -10,6 +10,7 @@ This project includes a backend agent server and a Gradio-based frontend.
 - **Security Scanning**: Check for public datasets, IAM recommendations.
 - **Performance Tuning**: Analyze slot consumption, query errors, partition recommendations.
 - **Visual Dashboard**: Generates comprehensive environment dashboards.
+- **Session Reporting**: Generate and download detailed PDF reports of your analysis session.
 
 ## Prerequisites & GCP Setup (One-Time)
 
@@ -164,3 +165,11 @@ python ui/gradio_bqops.py
     -   **Fix**: Ensure `QUOTA_PROJECT_ID` is set in your `agent/.env` file or environment. This tells Google libraries which project to bill for API calls.
 
 
+## Disclaimer
+
+**IMPORTANT: Community-Managed Project**
+
+This is a community-managed agent for BigQuery Operations and is not an officially supported Google product. It uses Generative AI, which can produce incorrect results or "hallucinate".
+
+-   **Verify Results**: Always manually verify critical findings (e.g., cost forecasts, security warnings) before taking action.
+-   **No Liability**: The developers and contributors bear no responsibility for any consequences resulting from the use of this tool.
