@@ -397,14 +397,92 @@ def get_most_frequently_queried_tables(days: int = 30):
 # --- INFRASTRUCTURE & ADVANCED OPTIMIZATION ---
 
 def check_slot_capacity_saturation():
-    """Checks if the project is hitting slot capacity limits."""
+    """
+    Checks if the project is hitting slot capacity limits by comparing usage against 
+    dynamic reservation limits (or the default 2000 for on-demand).
+    """
     sql = f"""
-        SELECT period_start,
-        SUM(period_slot_ms) / 1000 AS total_slot_seconds,
-        COUNT(DISTINCT job_id) AS active_jobs
-        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_TIMELINE_BY_PROJECT`
-        WHERE period_start > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 6 HOUR)
-        GROUP BY 1 ORDER BY 1 DESC LIMIT 100
+        WITH 
+        -------------------------------------------------------------------------
+        -- 1. DYNAMIC CAPACITY CHECK
+        -- Attempts to find assigned reservation capacity. Defaults to 2000 (On-Demand) if null.
+        -------------------------------------------------------------------------
+        ProjectCapacity AS (
+            SELECT 
+                COALESCE(
+                    (
+                        -- Try to find the capacity of the reservation assigned to this project
+                        SELECT SUM(slot_capacity + IFNULL(autoscale.max_slots, 0))
+                        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.RESERVATIONS`
+                        WHERE reservation_name = (
+                            SELECT reservation_name 
+                            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.ASSIGNMENTS_BY_PROJECT` 
+                            WHERE project_id = '{agent.TARGET_PROJECT_ID}' AND job_type = 'QUERY'
+                        )
+                    ), 
+                    2000 -- FALLBACK: Default to 2000 slots if no reservation is found (On-Demand)
+                ) AS effective_limit
+        ),
+
+        -------------------------------------------------------------------------
+        -- 2. SLOT USAGE (Timeline)
+        -------------------------------------------------------------------------
+        SlotUsage AS (
+            SELECT
+                TIMESTAMP_TRUNC(period_start, MINUTE) as time_bucket,
+                CAST(SUM(period_slot_ms) / (60 * 1000) AS INT64) AS avg_slots_used
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_TIMELINE_BY_PROJECT`
+            WHERE period_start > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 6 HOUR)
+            GROUP BY 1
+        ),
+
+        -------------------------------------------------------------------------
+        -- 3. JOB PERFORMANCE (Wait Times)
+        -------------------------------------------------------------------------
+        JobPerformance AS (
+            SELECT
+                TIMESTAMP_TRUNC(creation_time, MINUTE) as time_bucket,
+                COUNT(job_id) as jobs_submitted,
+                ROUND(AVG(TIMESTAMP_DIFF(start_time, creation_time, MILLISECOND) / 1000), 2) as avg_wait_sec,
+                ROUND(MAX(TIMESTAMP_DIFF(start_time, creation_time, MILLISECOND) / 1000), 2) as max_wait_sec
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+            WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 6 HOUR)
+              AND job_type = 'QUERY'
+            GROUP BY 1
+        )
+
+        -------------------------------------------------------------------------
+        -- 4. FINAL REPORT (Joined)
+        -------------------------------------------------------------------------
+        SELECT
+            S.time_bucket,
+            S.avg_slots_used,
+            C.effective_limit as system_slot_limit, -- Shows the limit the agent detected
+            
+            -- Calculate Usage Percentage
+            ROUND(S.avg_slots_used / C.effective_limit * 100, 1) as capacity_used_pct,
+            
+            J.jobs_submitted,
+            J.avg_wait_sec,
+            
+            -- Dynamic Status Logic
+            CASE 
+                -- If Wait Time > 2s AND Usage is > 90% of dynamic limit
+                WHEN J.avg_wait_sec > 2 AND S.avg_slots_used > (C.effective_limit * 0.90) 
+                    THEN 'CRITICAL: Saturation'
+                
+                -- If Wait Time > 2s but Usage is < 50% of limit (indicates concurrency caps, not slot caps)
+                WHEN J.avg_wait_sec > 2 AND S.avg_slots_used < (C.effective_limit * 0.50) 
+                    THEN 'WARNING: Queuing (Concurrency)'
+                    
+                ELSE 'OK'
+            END as health_status
+
+        FROM SlotUsage S
+        LEFT JOIN JobPerformance J USING (time_bucket)
+        CROSS JOIN ProjectCapacity C -- Apply the limit to every row
+        ORDER BY 1 DESC
+        LIMIT 100
     """
     return _run_query(sql)
 
