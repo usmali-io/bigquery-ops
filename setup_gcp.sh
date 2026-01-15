@@ -112,7 +112,7 @@ fi
 echo ""
 echo "Writing configuration to $ENV_FILE_FRONTEND and $ENV_FILE_BACKEND..."
 
-OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
+OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/bigquery"
 OPENID_PROVIDER_URL="https://accounts.google.com"
 
 # Write Frontend Config

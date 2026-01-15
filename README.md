@@ -6,24 +6,24 @@ This project includes a backend agent server and a Gradio-based frontend.
 
 ## Features
 
-### 💰 Cost Optimization
+### Cost Optimization
 - **Storage Analysis**: Compare **Logical vs. Physical** billing models to find immediate savings (Compression Analysis).
 - **Waste Detection**: Identify **Unused Tables** (inactive for >180 days) and excessive **Time Travel** storage usage.
 - **Forecasting**: Project monthly costs based on recent slot usage and storage trends.
 - **Expensive Queries**: Pinpoint top queries by slot consumption.
 
-### 🚀 Performance Tuning
-- **Anti-Pattern Detection**: Scans recent queries for common mistakes (e.g., `SELECT *`, `ORDER BY` without `LIMIT`, `REGEXP_CONTAINS`).
+### Performance Tuning
+- **Anti-Pattern Detection**: Scans recent queries for performance killers (e.g., `SELECT *`, `UNION` vs `UNION ALL`, `ORDER BY` without `LIMIT`, cross joins).
 - **Partitioning & Clustering**: Suggests partitioning keys for large tables and surfaces Google Cloud recommendations.
-- **Capacity Planning**: Monitors slot capacity saturation and concurrency.
+- **Capacity Planning**: Monitors slot capacity saturation, concurrency, and job wait times (detects queuing vs. saturation).
 - **Materialized Views**: Identifies opportunities to accelerate queries with materialized views.
 
-### 🛡️ Security & Governance
+### Security & Governance
 - **Exposure Scanning**: Detects **Publicly Exposed Datasets** (allUsers/allAuthenticatedUsers).
 - **IAM Forensics**: Audit who is querying specific tables and check active IAM policy recommendations.
 - **Permission Check**: Quickly verify who has `SELECT` access to sensitive tables.
 
-### 📊 Interactive UI & Reporting
+### Interactive UI & Reporting
 - **Visual Dashboards**: Generates high-level infographic dashboards summarizing your environment.
 - **Interactive Charts**: Dynamic Vega-Lite charts for cost and performance metrics (Maximize/Restore view).
 - **Data Export**: Download underlying chart data as **CSV**.
@@ -77,7 +77,6 @@ The agent uses OAuth 2.0 to authenticate users. You must create valid credential
         -   `openid`
         -   `https://www.googleapis.com/auth/userinfo.email`
         -   `https://www.googleapis.com/auth/userinfo.profile`
-        -   `https://www.googleapis.com/auth/cloud-platform`
         -   `https://www.googleapis.com/auth/bigquery`
     -   Add your email as a **Test User** (if External).
 
@@ -144,7 +143,7 @@ export QUOTA_PROJECT_ID="your-project-id"
 # Frontend OAuth Configuration (Required for UI)
 export OAUTH_CLIENT_ID="your-client-id"
 export OAUTH_CLIENT_SECRET="your-client-secret"
-export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/bigquery"
+export OAUTH_SCOPES="openid email profile https://www.googleapis.com/auth/bigquery"
 export OPENID_PROVIDER_URL="https://accounts.google.com"
 ```
 
