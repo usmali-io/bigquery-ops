@@ -520,29 +520,39 @@ def detect_antipatterns_in_query(sql: str) -> List[str]:
     
     # 1. SELECT * (Star)
     if re.search(r"SELECT\s+\*\s+FROM", sql, re.IGNORECASE):
-        findings.append("SELECT *: Avoid selecting all columns. Select only specific columns to reduce cost.")
+        findings.append("SELECT *: Avoid selecting all columns. Select only specific columns to reduce cost and bytes processed.")
 
     # 2. ORDER BY without LIMIT
-    # Heuristic: If ORDER BY presence > LIMIT presence (naive but effective for top-level)
-    # A safer check: If there is an ORDER BY but no LIMIT at all.
-    if re.search(r"ORDER\s+BY", sql, re.IGNORECASE) and not re.search(r"LIMIT\s+\d+", sql, re.IGNORECASE):
-        findings.append("ORDER BY without LIMIT: Sorting large result sets without a limit can be expensive and slow.")
+    # New: Detect ORDER BY RAND() which is very expensive
+    if re.search(r"ORDER\s+BY\s+RAND\(\)", sql, re.IGNORECASE):
+        findings.append("ORDER BY RAND(): Extremely expensive operation (prevents caching, forces resorting). Use HASH() or pre-generated random columns.")
+
+    # Check for general ORDER BY without LIMIT
+    # Refined: Limit regex allows parameters (e.g. LIMIT @rows) or integers.
+    if re.search(r"ORDER\s+BY", sql, re.IGNORECASE) and not re.search(r"LIMIT\s+(@\w+|\d+)", sql, re.IGNORECASE):
+        findings.append("ORDER BY without LIMIT: Sorting large result sets is expensive. (Note: Valid in Window Functions, but ensure partitioning is used).")
 
     # 3. REGEXP_CONTAINS vs LIKE
     if re.search(r"REGEXP_CONTAINS", sql, re.IGNORECASE):
-        findings.append("REGEXP_CONTAINS: Check if 'LIKE' can be used instead for better performance on simple patterns.")
+        findings.append("REGEXP_CONTAINS: Check if 'LIKE', 'STARTS_WITH', or 'ENDS_WITH' can be used instead for better performance.")
 
-    # 4. Wildcard at start of LIKE (Non-sargable)
+    # 4. Leading Wildcard in LIKE (Non-sargable)
     if re.search(r"LIKE\s+['\"]%[^'\"]+['\"]", sql, re.IGNORECASE):
-        findings.append("Leading Wildcard in LIKE: 'LIKE %...' prevents index usage and requires full scans.")
+        findings.append("Leading Wildcard in LIKE: 'LIKE %...' prevents index usage. Use 'STARTS_WITH' or explicit search indexing.")
 
     # 5. Cross Joins
+    # Explicit
     if re.search(r"CROSS\s+JOIN", sql, re.IGNORECASE):
-        findings.append("CROSS JOIN: Avoid cross joins as they can produce massive result sets (Cartesian products).")
-        
+        findings.append("CROSS JOIN: Avoid cross joins (Cartesian products) unless strictly necessary.")
+    
+    # Implicit Comma Join (Heuristic: FROM t1, t2)
+    # Checks for "FROM table, table" pattern
+    if re.search(r"FROM\s+[`a-zA-Z0-9_\.]+\s*,\s*[`a-zA-Z0-9_\.]+", sql, re.IGNORECASE):
+         findings.append("Comma Join / Implicit Cross Join: 'FROM t1, t2' detected. Prefer explicit JOIN syntax.")
+
     # 6. DML Single Row Inserts (VALUES)
     if re.search(r"INSERT\s+INTO\s+.*VALUES\s*\(", sql, re.IGNORECASE):
-        findings.append("Single Row INSERT: Avoid frequent single-row inserts. Use streaming or batch loading instead.")
+        findings.append("Single Row INSERT: Avoid frequent single-row inserts. Use batch loading or Streaming API.")
 
     # 7. String Casting in Filters (Dynamic Predicates)
     if re.search(r"(WHERE|JOIN).*CAST\(\s*\w+\s+AS\s+STRING\s*\)", sql, re.IGNORECASE | re.DOTALL):
@@ -550,7 +560,12 @@ def detect_antipatterns_in_query(sql: str) -> List[str]:
          
     # 8. Semi-Join (IN subquery)
     if re.search(r"IN\s*\(\s*SELECT", sql, re.IGNORECASE):
-        findings.append("Semi-Join (IN Subquery): IN (SELECT...) can be inefficient. Consider using EXISTS or JOIN.")
+        findings.append("Semi-Join (IN Subquery): IN (SELECT...) can be inefficient. Consider using EXISTS (for inclusion) or JOIN.")
+
+    # 9. UNION vs UNION ALL
+    # UNION performs DISTINCT (Sort + De-dup), UNION ALL does not.
+    if re.search(r"\s+UNION\s+(?!ALL)", sql, re.IGNORECASE):
+        findings.append("UNION usage: 'UNION' implies DISTINCT (expensive). Use 'UNION ALL' if duplicates are acceptable.")
 
     return findings
 

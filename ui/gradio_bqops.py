@@ -914,21 +914,27 @@ if __name__ == "__main__":
                     visible=False
                 )
 
-                gr.Examples(
-                    examples=[
-                        "Analyze my environment and give me overall suggestions",
-                        "Forecast our monthly costs based on recent usage trends.",
-                        "Identify tables with high Time Travel storage costs.",
-                        "Analyze recent heavy queries for anti-patterns and suggest optimization.",
-                        "Find tables that haven't been queried in the last 180 days.",
-                        "Check for any datasets that are publicly exposed.",
-                        "Show me a visualization of our hourly slot consumption.",
-                        "Which tables should switch to physical storage billing?"
-                    ],
-                    inputs=msg_input,
-                    label="Example Prompts (Click to use)"
+                # Examples as a clickable Dataset (Optimized: Client-side JS update)
+                example_prompts = [
+                    ["Analyze my environment and give me overall suggestions"],
+                    ["Check system for slot capacity saturation."],
+                    ["Forecast our monthly costs based on recent usage trends."],
+                    ["Identify tables with high Time Travel storage costs."],
+                    ["Analyze recent heavy queries for anti-patterns and suggest optimization."],
+                    ["Find active recommendations for partitioning and clustering."],
+                    ["Find tables that haven't been queried in the last 180 days."],
+                    ["Check for any datasets that are publicly exposed or have risky IAM policies."],
+                    ["Show me a visualization of our hourly slot consumption."],
+                    ["Which tables should switch to physical storage billing for cost savings?"],
+                    ["Are there any materialized view recommendations?"],
+                    ["Show top query errors from the last 7 days."]
+                ]
+                
+                examples_dataset = gr.Dataset(
+                    label="Example Prompts (Click to use)",
+                    components=[msg_input],
+                    samples=example_prompts
                 )
-
 
             
             with gr.Column(scale=0, visible=False) as viz_column:
@@ -990,10 +996,18 @@ if __name__ == "__main__":
         
         toggle_btn.click(toggle_plot_visibility, [plot_visible_state], [plot_visible_state, chat_column, viz_column, toggle_btn])
         
-        # New Feature: Click to Populate Input ONLY (No Auto-Submit)
+        # Use Python handler for robustness (JS was failing for user)
+        # populate_input simply returns selection[0], which extracts the text from the dataset list
         suggestion_dataset.click(
+            populate_input,
+            inputs=[suggestion_dataset],
+            outputs=[msg_input],
+            show_progress="hidden"
+        )
+        
+        examples_dataset.click(
             populate_input, 
-            inputs=[suggestion_dataset], 
+            inputs=[examples_dataset], 
             outputs=[msg_input],
             show_progress="hidden"
         )
