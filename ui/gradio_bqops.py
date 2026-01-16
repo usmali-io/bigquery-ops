@@ -254,7 +254,8 @@ def reset_conversation(session_state):
         gr.update(value=None, visible=False),   # download_btn
         gr.update(samples=[], visible=False),   # suggestion_dataset
         [],                                     # session_viz
-        []                                      # session_tables
+        [],                                     # session_tables
+        gr.update()                             # logout_trigger
     )
 
 
@@ -534,7 +535,15 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
         agent_response_json = response.json()
     except Exception as e:
         history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": f"❌ **Error:** {str(e)}\n\n*If this persists, click 'Reset Conversation'.*"})
+        
+        logout_val = gr.update()
+        if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code in [401, 403]:
+            print(f"DEBUG: Auth error detected ({e.response.status_code}). Triggering logout.")
+            history.append({"role": "assistant", "content": f"❌ **Session Expired:** Please sign in again."})
+            logout_val = "logout"
+        else:
+            history.append({"role": "assistant", "content": f"❌ **Error:** {str(e)}\n\n*If this persists, click 'Reset Conversation'.*"})
+
         # Return error state with consistent output count
         return (
             "", history, 
@@ -542,7 +551,8 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             gr.update(visible=False, scale=0), gr.update(scale=20), 
             False, gr.update(visible=False), gr.update(visible=False),
             gr.update(visible=False),
-            session_viz, session_tables
+            session_viz, session_tables,
+            logout_val
         )
 
     # 2. Extract Content (Text)
@@ -550,6 +560,13 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
         full_response_text = agent_response_json[-1]['content']['parts'][0]['text']
     except (KeyError, IndexError):
         full_response_text = "(No response text received from agent)"
+
+    # Heuristic: Check for Auth Error in text (since backend returns 200 OK)
+    logout_val = gr.update()
+    if "authentication error" in full_response_text.lower() and "credentials" in full_response_text.lower():
+         print(f"DEBUG: Auth error detected in response text. Triggering logout.")
+         full_response_text += "\n\n❌ **Session Expired:** Auto-logging out..."
+         logout_val = "logout"
 
     # 3. Extract Content (Visuals)
     dashboard_image_path = extract_image_from_history(agent_response_json)
@@ -714,9 +731,9 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             gr.update(visible=True, scale=1), gr.update(scale=2), 
             False, toggle_btn_update, download_update,
             suggestion_update,
-            suggestion_update,
             session_viz,
-            session_tables
+            session_tables,
+            logout_val
         )
     else:
         return (
@@ -724,9 +741,9 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             gr.update(visible=False, scale=0), gr.update(scale=20), 
             False, gr.update(visible=False), gr.update(value=None, visible=False),
             suggestion_update,
-            suggestion_update,
             session_viz,
-            session_tables
+            session_tables,
+            logout_val
         )
 
 # --- Helper: Populate Input ---
@@ -948,6 +965,9 @@ if __name__ == "__main__":
             "It can give wrong results and hallucinate. The developer bears no responsibility for any consequences."
         )
 
+        logout_trigger = gr.Textbox(visible=False, elem_id="logout_trigger")
+        logout_trigger.change(None, [logout_trigger], None, js="val => { if (val === 'logout') window.location.href = '/logout'; }")
+
         plot_visible_state = gr.State(value=False)
         session_viz = gr.State(value=[])
         session_tables = gr.State(value=[])
@@ -970,7 +990,8 @@ if __name__ == "__main__":
                 download_btn,
                 suggestion_dataset,
                 session_viz,
-                session_tables
+                session_tables,
+                logout_trigger
             ]
         )
 
@@ -990,7 +1011,8 @@ if __name__ == "__main__":
                 download_btn,
                 suggestion_dataset,
                 session_viz,
-                session_tables
+                session_tables,
+                logout_trigger
             ]
         )
         
@@ -1028,7 +1050,8 @@ if __name__ == "__main__":
                 download_btn,
                 suggestion_dataset,
                 session_viz,
-                session_tables
+                session_tables,
+                logout_trigger
             ]
         )
         
