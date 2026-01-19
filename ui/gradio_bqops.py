@@ -255,7 +255,8 @@ def reset_conversation(session_state):
         gr.update(samples=[], visible=False),   # suggestion_dataset
         [],                                     # session_viz
         [],                                     # session_tables
-        gr.update()                             # logout_trigger
+        gr.update(),                            # logout_trigger
+        []                                      # suggestions_state
     )
 
 
@@ -596,14 +597,15 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
         print(f"DEBUG: Follow-up raw text found: {raw_text}")
 
         try:
-            raw_suggestions = json.loads(raw_text)
-            if isinstance(raw_suggestions, list):
-                suggestion_samples = [[str(s)] for s in raw_suggestions]
             # 1. Try standard JSON
-            parsed_list = json.loads(raw_text)
-            if isinstance(parsed_list, list):
-                suggestion_samples = [[str(s)] for s in parsed_list]
-            print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions via JSON.")
+            if raw_text.startswith("[") and raw_text.endswith("]"):
+                 parsed_list = json.loads(raw_text)
+                 if isinstance(parsed_list, list):
+                     suggestion_samples = [[str(s)] for s in parsed_list]
+                 print(f"DEBUG: Parsed {len(suggestion_samples)} suggestions via JSON.")
+            else:
+                 # Try parsing without strict list brackets if needed, or fallback
+                 pass
         except json.JSONDecodeError:
             # 2. Try ast.literal_eval (handles python-style lists with single quotes etc)
             try:
@@ -733,7 +735,8 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             suggestion_update,
             session_viz,
             session_tables,
-            logout_val
+            logout_val,
+            suggestion_samples
         )
     else:
         return (
@@ -743,12 +746,11 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             suggestion_update,
             session_viz,
             session_tables,
-            logout_val
+            logout_val,
+            suggestion_samples
         )
 
-# --- Helper: Populate Input ---
-def populate_input(selection):
-    return selection[0]
+
 
 # --- Toggle Logic ---
 def toggle_plot_visibility(is_maximized):
@@ -972,6 +974,7 @@ if __name__ == "__main__":
         session_viz = gr.State(value=[])
         session_tables = gr.State(value=[])
         session_state = gr.State(value={})
+        suggestions_state = gr.JSON(value=[], visible=False, label="Suggestions State") # Store current suggestions for JS access
 
         # Updated Submit Event: Removed duplicate output viz_column
         # Trigger on Enter
@@ -991,7 +994,8 @@ if __name__ == "__main__":
                 suggestion_dataset,
                 session_viz,
                 session_tables,
-                logout_trigger
+                logout_trigger,
+                suggestions_state
             ]
         )
 
@@ -1012,28 +1016,41 @@ if __name__ == "__main__":
                 suggestion_dataset,
                 session_viz,
                 session_tables,
-                logout_trigger
+                logout_trigger,
+                suggestions_state
             ]
         )
         
         toggle_btn.click(toggle_plot_visibility, [plot_visible_state], [plot_visible_state, chat_column, viz_column, toggle_btn])
         
-        # Use Python handler for robustness (JS was failing for user)
-        # populate_input simply returns selection[0], which extracts the text from the dataset list
+
+        
+
+        
+
+        # Client-side JS handler for suggestions (Instant)
+        # We pass suggestions_state as input[1] so JS can access the data
         suggestion_dataset.click(
-            populate_input,
-            inputs=[suggestion_dataset],
+            fn=None,
+            inputs=[suggestion_dataset, suggestions_state],
             outputs=[msg_input],
+            # If val is number (index), look it up in data (suggestions_state)
+            # data is the second argument to the JS function
+            js="(val, data) => { if (typeof val === 'number' && data && data[val]) { return data[val][0]; } return val; }",
             show_progress="hidden"
         )
         
+        # Client-side JS handler for examples (Instant)
+        # We inline the examples for speed and simplicity
         examples_dataset.click(
-            populate_input, 
+            fn=None, 
             inputs=[examples_dataset], 
             outputs=[msg_input],
+            # Use the static example_prompts list in JS
+            js=f"(val) => {{ const examples = {json.dumps(example_prompts)}; return typeof val === 'number' ? examples[val][0] : val; }}",
             show_progress="hidden"
         )
-        
+
         # Updated Reset Event: Removed duplicate output viz_column
         reset_btn.click(
             reset_conversation, 
@@ -1051,7 +1068,8 @@ if __name__ == "__main__":
                 suggestion_dataset,
                 session_viz,
                 session_tables,
-                logout_trigger
+                logout_trigger,
+                suggestions_state
             ]
         )
         
