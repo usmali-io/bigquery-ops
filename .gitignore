@@ -31,3 +31,4 @@ adk_logs/
 htmlcov/
 */.adk/*
 bqops/.env
+*/.tests/*
