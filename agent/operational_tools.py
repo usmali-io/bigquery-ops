@@ -752,15 +752,186 @@ def _generate_dashboard_image(summary_text: str) -> Optional[str]:
     # If both failed, return explicit error image rather than None
     return _create_error_image_b64()
 
+# --- SLOT DETECTIVE TOOLS ---
+
+def get_slow_queries(days: int = 7):
+    """
+    Returns the top 10 slowest queries from the last N days (Default: 7).
+    Target Audience: Data Platform Admins.
+    """
+    sql = f"""
+        SELECT
+            job_id,
+            user_email,
+            TIMESTAMP_DIFF(end_time, start_time, MILLISECOND) / 1000 AS duration_seconds,
+            total_slot_ms / (1000 * 60 * 60) AS slot_hours,
+            LEFT(query, 200) AS query_snippet,
+            total_bytes_processed / (1024 * 1024 * 1024) AS gb_processed
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+        AND job_type = 'QUERY'
+        AND statement_type = 'SELECT'
+        AND error_result IS NULL
+        ORDER BY duration_seconds DESC
+        LIMIT 10
+    """
+    params = [bigquery.ScalarQueryParameter("days", "INT64", days)]
+    return _run_query(sql, params)
+
+def analyze_data_skew(job_id: str):
+    """
+    Analyzes a specific job for Data Skew (Long Tail) using the Jobs Timeline.
+    Detects if a job is waiting on a few straggler workers ("jamming one worker").
+    """
+    # 1. Timeline Analysis for Skew
+    skew_sql = f"""
+        WITH 
+        -- 1. TIMELINE DATA: Get slots per second AND the Peak for the whole job
+        RawTimeline AS (
+            SELECT
+                job_id,
+                SAFE_DIVIDE(period_slot_ms, 1000) as active_slots,
+                -- Window function calculates Peak across the whole job before we aggregate
+                MAX(SAFE_DIVIDE(period_slot_ms, 1000)) OVER(PARTITION BY job_id) as peak_slots
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_TIMELINE_BY_PROJECT` 
+            WHERE job_id = @job_id
+        ),
+
+        -- 2. AGGREGATE TIMELINE: Now we can compare active_slots vs peak_slots
+        TimelineStats AS (
+            SELECT
+                job_id,
+                ANY_VALUE(peak_slots) as peak_slots,
+                -- Calculate % of time spent running at < 10% capacity
+                SAFE_DIVIDE(
+                    COUNTIF(active_slots < (peak_slots * 0.10)),
+                    COUNT(*)
+                ) as tail_time_ratio
+            FROM RawTimeline
+            GROUP BY job_id
+        ),
+
+        -- 3. STAGE SIGNAL: Detects uneven work distribution
+        StageStats AS (
+            SELECT 
+                job_id,
+                -- Skew Ratio: Max Time / Avg Time
+                MAX(SAFE_DIVIDE(s.write_ms_max, NULLIF(s.write_ms_avg, 0))) as max_write_skew,
+                MAX(SAFE_DIVIDE(s.compute_ms_max, NULLIF(s.compute_ms_avg, 0))) as max_compute_skew,
+                
+                -- Identify the worst stage
+                ARRAY_AGG(
+                    s.name ORDER BY GREATEST(
+                        SAFE_DIVIDE(s.write_ms_max, NULLIF(s.write_ms_avg, 0)), 
+                        SAFE_DIVIDE(s.compute_ms_max, NULLIF(s.compute_ms_avg, 0))
+                    ) DESC LIMIT 1
+                )[OFFSET(0)] as problematic_stage_name
+            FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS`, -- Update Region
+            UNNEST(job_stages) as s
+            WHERE job_id = @job_id
+            AND (s.end_ms - s.start_ms) > 1000 -- Ignore tiny stages
+            GROUP BY job_id
+        )
+
+        -- 4. SYNTHESIS
+        SELECT
+            t.peak_slots,
+            ROUND(t.tail_time_ratio * 100, 1) as tail_pct,
+            ROUND(s.max_write_skew, 1) as write_skew_ratio,
+            
+            CASE
+                -- Scenario A: High Tail + High Internal Skew
+                WHEN t.tail_time_ratio > 0.50 
+                    AND (s.max_write_skew > 10 OR s.max_compute_skew > 10)
+                THEN FORMAT('CONFIRMED DATA SKEW: Stage "%s" imbalance (Max worker took %dx longer than Avg).', s.problematic_stage_name, CAST(GREATEST(s.max_write_skew, s.max_compute_skew) AS INT64))
+
+                -- Scenario B: High Tail + Balanced Internal Stats
+                WHEN t.tail_time_ratio > 0.50 
+                THEN 'SERIAL BOTTLENECK: Long tail detected, but workers were balanced. Likely waiting on external locks or single-threaded operators.'
+
+                -- Scenario C: Low Tail
+                WHEN t.tail_time_ratio <= 0.50 THEN 'HEALTHY: No significant tail detected.'
+                
+                ELSE 'INCONCLUSIVE'
+            END as diagnosis
+        FROM TimelineStats t
+        LEFT JOIN StageStats s ON t.job_id = s.job_id;
+    """
+    
+    # 2. Wait Time Analysis (to rule out compute constraints)
+    job_sql = f"""
+        SELECT
+            job_id,
+            user_email,
+            query,
+            total_bytes_processed,
+            TIMESTAMP_DIFF(start_time, creation_time, MILLISECOND) / 1000 AS avg_wait_sec,
+            -- Max wait time isn't directly in JOBS view, but we can infer contention from gap between creation and start
+            -- For single worker jamming, we focus on the skew diagnosis from timeline.
+            total_slot_ms
+        FROM `{agent.TARGET_PROJECT_ID}.region-{agent.TARGET_REGION}.INFORMATION_SCHEMA.JOBS_BY_PROJECT`
+        WHERE job_id = @job_id
+    """
+
+    params = [bigquery.ScalarQueryParameter("job_id", "STRING", job_id)]
+    
+    skew_results = _run_query(skew_sql, params)
+    job_results = _run_query(job_sql, params)
+    
+    if "error" in skew_results[0] or "error" in job_results[0]:
+        return {"error": "Failed to retrieve job analysis."}
+
+    skew_data = skew_results[0] if skew_results else {}
+    job_data = job_results[0] if job_results else {}
+    
+    # Combine findings
+    diagnosis = skew_data.get("diagnosis", "Unknown")
+    
+    # Enhanced Human-Readable Output
+    analysis = {
+        "diagnosis": diagnosis,
+        "details": {
+            "max_slots_used": skew_data.get("max_slots"),
+            "avg_slots_used": skew_data.get("avg_slots"),
+            "long_tail_ratio_pct": skew_data.get("tail_ratio_pct"),
+            "explanation": ""
+        },
+        "job_info": job_data
+    }
+    
+    if diagnosis.startswith('CONFIRMED DATA SKEW'):
+        user = job_data.get("user_email", "The user")
+        # Tailored message with specific advice
+        analysis["details"]["explanation"] = (
+            f"Your query isn't slow because of low compute. "
+            f"It's slow because {user} has a large standard deviation in data distribution "
+            f"(e.g. one key has 10 million rows) and is jamming one worker. "
+            f"Rewriting with a salt/skew-join pattern will fix this. "
+            f"[{diagnosis}]"
+        )
+    elif diagnosis.startswith("SERIAL BOTTLENECK"):
+         analysis["details"]["explanation"] = (
+             f"The query is waiting on a serial process (long tail), but individual workers seem balanced. "
+             f"This often indicates waiting on external locks, single-threaded operators, or output writing. "
+             f"[{diagnosis}]"
+         )
+    elif diagnosis.startswith("HEALTHY"):
+         analysis["details"]["explanation"] = "Query parallelism looks healthy. Slowness might be due to simply high data volume or complex calculations."
+    else:
+         analysis["details"]["explanation"] = f"Analysis inconclusive. ({diagnosis})"
+         
+    return [analysis]
+
+# --- COMPREHENSIVE SCAN ORCHESTRATOR ---
+
 def perform_full_environment_scan():
     """
     Analyzes the entire environment across Cost, Security, and Performance,
     summarizes the findings, and generates a visual dashboard representation.
     """
     import concurrent.futures
-    import contextvars
 
-    # 1. Gather Data (Running key lightweight checks in PARALLEL)
+    # 1. Gather Data (Running key checks in PARALLEL)
     findings = []
     
     # Capture the Token explicitly (Context objects are not thread-safe for reuse in run())
@@ -781,25 +952,42 @@ def perform_full_environment_scan():
             return None
 
     # Execute efficiently in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Cost Tools
         future_forecast = executor.submit(run_with_token, current_token, forecast_monthly_costs)
         future_time_travel = executor.submit(run_with_token, current_token, get_top_time_travel_consumers)
         future_unused = executor.submit(run_with_token, current_token, find_unused_tables, days_inactive=30)
+        future_expensive = executor.submit(run_with_token, current_token, get_expensive_queries_by_slot_hours, days=30)
+        future_compression = executor.submit(run_with_token, current_token, analyze_storage_compression_model)
+        
+        # Security/Governance Tools
         future_public = executor.submit(run_with_token, current_token, find_publicly_exposed_datasets)
         future_iam = executor.submit(run_with_token, current_token, get_iam_policy_recommendations)
+        
+        # Performance/Optimization Tools
         future_errors = executor.submit(run_with_token, current_token, get_common_query_errors)
+        future_saturation = executor.submit(run_with_token, current_token, check_slot_capacity_saturation)
+        future_unpartitioned = executor.submit(run_with_token, current_token, identify_large_unpartitioned_tables)
+        future_part_recs = executor.submit(run_with_token, current_token, get_partition_cluster_recommendations)
 
         # Gather results (timeouts could be added here if needed)
         forecast = future_forecast.result()
         time_travel = future_time_travel.result()
         unused = future_unused.result()
+        expensive = future_expensive.result()
+        compression = future_compression.result()
+        
         public_datasets = future_public.result()
         iam_recs = future_iam.result()
+        
         errors = future_errors.result()
+        saturation = future_saturation.result()
+        unpartitioned = future_unpartitioned.result()
+        part_recs = future_part_recs.result()
 
     # 2. Synthesize Summary (Processing the results)
     
-    # Cost
+    # --- COST ---
     if forecast and isinstance(forecast, list) and len(forecast) > 0 and 'forecasted_monthly_slot_hours' in forecast[0]:
          findings.append(f"Projected Monthly Slot Hours: {forecast[0]['forecasted_monthly_slot_hours']}")
     
@@ -809,8 +997,14 @@ def perform_full_environment_scan():
     if unused:
         findings.append(f"Unused Tables (30 days): {len(unused)}")
 
-    # Security
-    # Only report if the check actually succeeded (is not None)
+    if expensive and len(expensive) > 0:
+        top_cost = expensive[0].get('slot_hours', 0)
+        findings.append(f"Top Query Cost: {int(top_cost)} slot hrs")
+        
+    if compression and len(compression) > 0:
+         findings.append(f"Storage Optimization: {len(compression)} tables")
+
+    # --- SECURITY ---
     if public_datasets is not None:
         if public_datasets and 'message' not in public_datasets[0]:
             findings.append(f"CRITICAL: Found {len(public_datasets)} publicly exposed datasets.")
@@ -818,15 +1012,26 @@ def perform_full_environment_scan():
             findings.append("Security: No public datasets found.")
         
     if iam_recs:
-        findings.append(f"IAM Recommendations available: {len(iam_recs)}")
+        findings.append(f"IAM Recommendations: {len(iam_recs)}")
 
-    # Performance
+    # --- PERFORMANCE ---
     if errors:
         top_error = errors[0].get('reason', 'N/A')
         # Sanitize for Image Generation: "notFound" -> "Not Found"
         if top_error == "notFound":
             top_error = "Not Found"
         findings.append(f"Top Query Error: {top_error}")
+        
+    if saturation and len(saturation) > 0:
+        health = saturation[0].get('health_status', 'Unknown')
+        if health != 'OK':
+            findings.append(f"Slot Health: {health}")
+            
+    if unpartitioned:
+        findings.append(f"Unpartitioned Large Tables: {len(unpartitioned)}")
+        
+    if part_recs:
+        findings.append(f"Partitioning Opportunities: {len(part_recs)}")
 
     # 3. Generate Image (Only if we have findings)
     if not findings:

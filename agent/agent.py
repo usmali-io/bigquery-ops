@@ -96,6 +96,9 @@ bq_ops_agent = Agent(
         operational_tools.get_partition_cluster_recommendations,
         operational_tools.get_materialized_view_recommendations,
         operational_tools.get_iam_policy_recommendations,
+        # Slot Detective Tools
+        operational_tools.get_slow_queries,
+        operational_tools.analyze_data_skew,
         # Comprehensive Scanner
         operational_tools.perform_full_environment_scan
     ]

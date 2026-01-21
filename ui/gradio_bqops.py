@@ -553,7 +553,8 @@ async def handle_chat_and_plot(message, history, profile: gr.OAuthProfile | None
             False, gr.update(visible=False), gr.update(visible=False),
             gr.update(visible=False),
             session_viz, session_tables,
-            logout_val
+            logout_val,
+            []
         )
 
     # 2. Extract Content (Text)
