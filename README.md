@@ -4,6 +4,9 @@ A GenAI-powered BigQuery Operations Agent built with the **Google Agent Developm
 
 This project includes a backend agent server and a Gradio-based frontend.
 
+<img width="1700" height="967" alt="image" src="https://github.com/user-attachments/assets/8b06e9a3-fa20-4135-91fc-cf3595cf1008" />
+
+
 ## Features
 
 ### Cost Optimization
