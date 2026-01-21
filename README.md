@@ -29,6 +29,33 @@ This project includes a backend agent server and a Gradio-based frontend.
 - **Data Export**: Download underlying chart data as **CSV**.
 - **PDF Reporting**: Generate comprehensive **PDF Session Reports** containing executive summaries, embedded charts, and actionable data tables.
 
+## Available Tools & Example Prompts
+
+Here are some of the powerful tools available in the agent, along with complex example prompts to help you get started:
+
+### 🔍 Full Environment Analysis
+- **Tool**: `perform_full_environment_scan`
+- **What it does**: Runs comprehensive checks across Cost, Security, and Performance layers.
+- **Example Prompt**: *"🚀 Perform a full environment scan for Cost, Security, and Performance."*
+
+### 💰 Cost Optimization
+- **Tools**: `forecast_monthly_costs`, `get_expensive_queries`, `identify_large_unpartitioned_tables`, `analyze_storage_compression_model`
+- **Example Prompt**: *"Forecast our monthly costs based on recent usage trends and identify tables with high Time Travel costs vs. total size."*
+- **Example Prompt**: *"Which tables should switch to physical storage billing for cost savings? Analyze our storage compression model."*
+
+### ⚡ Performance & Slots
+- **Tools**: `check_slot_capacity_saturation`, `get_hourly_slot_consumption`, `get_slow_queries`, `analyze_data_skew` (Slot Detective)
+- **Example Prompt**: *"Check for slot capacity saturation and list the top slow queries from the last 7 days."*
+- **Example Prompt**: *"Show me a visualization of our hourly slot consumption and analyze recent slow queries for data skew."*
+
+### 🛡️ Security & Governance
+- **Tools**: `find_publicly_exposed_datasets`, `check_table_permissions`, `get_iam_policy_recommendations`
+- **Example Prompt**: *"Scan for publicly exposed datasets and identify any risky IAM policy recommendations."*
+
+### 🏗️ Infrastructure
+- **Tools**: `suggest_partitioning_keys`, `get_partition_cluster_recommendations`
+- **Example Prompt**: *"Find unpartitioned large tables and suggest partitioning keys based on recent query patterns."*
+
 ## Prerequisites & GCP Setup (One-Time)
 
 Before running the agent, ensure your Google Cloud environment is ready.

@@ -719,7 +719,7 @@ def _generate_dashboard_image(summary_text: str) -> Optional[str]:
     
     Guidelines:
     - Dark Mode UI, High contrast.
-    - 3 Panels: Cost, Security, Performance.
+    - 3 Panels: Cost, Performance, Optimization.
     - Simple Charts (Donut, Bar).
     - IMPORTANT: Use bold, large text. Do not include fine details.
     - TEXT ACCURACY: Render labels EXACTLY as provided. Do not misspell or hallucinate text.
@@ -969,6 +969,9 @@ def perform_full_environment_scan():
         future_saturation = executor.submit(run_with_token, current_token, check_slot_capacity_saturation)
         future_unpartitioned = executor.submit(run_with_token, current_token, identify_large_unpartitioned_tables)
         future_part_recs = executor.submit(run_with_token, current_token, get_partition_cluster_recommendations)
+        
+        # Slot Detective
+        future_slow_queries = executor.submit(run_with_token, current_token, get_slow_queries, days=7)
 
         # Gather results (timeouts could be added here if needed)
         forecast = future_forecast.result()
@@ -984,6 +987,7 @@ def perform_full_environment_scan():
         saturation = future_saturation.result()
         unpartitioned = future_unpartitioned.result()
         part_recs = future_part_recs.result()
+        slow_queries = future_slow_queries.result()
 
     # 2. Synthesize Summary (Processing the results)
     
@@ -1026,6 +1030,9 @@ def perform_full_environment_scan():
         health = saturation[0].get('health_status', 'Unknown')
         if health != 'OK':
             findings.append(f"Slot Health: {health}")
+            
+    if slow_queries:
+        findings.append(f"Slow Queries (7 days): {len(slow_queries)}")
             
     if unpartitioned:
         findings.append(f"Unpartitioned Large Tables: {len(unpartitioned)}")

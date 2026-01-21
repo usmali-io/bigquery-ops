@@ -936,18 +936,17 @@ if __name__ == "__main__":
 
                 # Examples as a clickable Dataset (Optimized: Client-side JS update)
                 example_prompts = [
-                    ["Analyze my environment and give me overall suggestions"],
-                    ["Check system for slot capacity saturation."],
-                    ["Forecast our monthly costs based on recent usage trends."],
-                    ["Identify tables with high Time Travel storage costs."],
-                    ["Analyze recent heavy queries for anti-patterns and suggest optimization."],
-                    ["Find active recommendations for partitioning and clustering."],
-                    ["Find tables that haven't been queried in the last 180 days."],
-                    ["Check for any datasets that are publicly exposed or have risky IAM policies."],
+                    ["Perform a full environment scan for Cost, Security, and Performance."],
                     ["Show me a visualization of our hourly slot consumption."],
+                    ["Show me the 10 most expensive queries."],
+                    ["Check for slot capacity saturation and list the top slow queries."],
+                    ["Identify tables with high Time Travel costs vs. their total size."],
+                    ["Analyze top 10 slow queries for data skew."],
+                    ["Find unpartitioned large tables and suggest partitioning keys."],
+                    ["Scan for publicly exposed datasets and check IAM recommendations."],
                     ["Which tables should switch to physical storage billing for cost savings?"],
-                    ["Are there any materialized view recommendations?"],
-                    ["Show top query errors from the last 7 days."]
+                    ["Show top query errors from the last 7 days."],
+                    ["Forecast our monthly costs based on recent usage trends."]
                 ]
                 
                 examples_dataset = gr.Dataset(
